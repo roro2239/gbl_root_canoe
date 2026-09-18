@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 /* ==================== main ==================== */
 static int read_file(const char *filename, char **data, int32_t *size) {
     FILE *file = fopen(filename, "rb");
@@ -32,9 +33,17 @@ static int read_file(const char *filename, char **data, int32_t *size) {
 }
 
 int32_t main(int32_t argc, char* argv[]) {
-    if (argc != 3) {
-        printf("Usage: %s <input_file> <output_file>\n", argv[0]);
+    if (argc != 3 && argc != 4) {
+        printf("用法：%s <输入文件> <输出文件> [normal|fake_locked]\n默认模式：fake_locked（假回锁）\n", argv[0]);
         return EXIT_FAILURE;
+    }
+    PatchMode mode = PATCH_MODE_FAKE_LOCKED;
+    if (argc == 4) {
+        if (strcmp(argv[3], "normal") == 0) mode = PATCH_MODE_NORMAL;
+        else if (strcmp(argv[3], "fake_locked") != 0) {
+            printf("错误：未知模式 %s，应为 normal 或 fake_locked。\n", argv[3]);
+            return EXIT_FAILURE;
+        }
     }
     char* data = NULL;
     int32_t size = 0;
@@ -42,7 +51,7 @@ int32_t main(int32_t argc, char* argv[]) {
         printf("Failed to read file: %s\n", argv[1]);
         return EXIT_FAILURE;
     }
-    if (!PatchBuffer(data,size))
+    if (!PatchBufferEx(data,size,mode))
     {
         printf("Patching failed\n");
         free(data);
@@ -60,7 +69,11 @@ int32_t main(int32_t argc, char* argv[]) {
         free(data);
         return EXIT_FAILURE;
     }
-    fclose(out);
+    if (fclose(out) != 0) {
+        printf("错误：输出文件关闭失败。\n");
+        free(data);
+        return EXIT_FAILURE;
+    }
     free(data);
     printf("Saved to %s\n", argv[2]);
     return EXIT_SUCCESS;

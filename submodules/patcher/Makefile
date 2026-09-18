@@ -1,5 +1,12 @@
 SRCS := $(shell find src -name '*.c')
 CFLAGS := -O2 -Iinclude
+TEST_CC ?= clang
+
+.PHONY: build test
+test:
+	mkdir -p build
+	$(TEST_CC) -g -O1 -fsanitize=address,undefined -Iinclude -o build/test_fastboot tests/test_fastboot.c $(filter-out src/patch_abl.c,$(SRCS))
+	./build/test_fastboot
 
 clean:
 	rm -rf build || true

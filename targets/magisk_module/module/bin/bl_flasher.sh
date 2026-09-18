@@ -284,18 +284,19 @@ place_efisp_tree_to() {
 
 build_patched_efi() {
   abl="$1"
-  rm -f "$RUNTIME_DIR/LinuxLoader.efi" "$RUNTIME_DIR/patched.efi" "$RUNTIME_DIR/patch.log"
+  rm -f "$RUNTIME_DIR/LinuxLoader.efi" "$RUNTIME_DIR/patched.efi" "$RUNTIME_DIR/normal.efi" "$RUNTIME_DIR/patch.log"
   if ! "$MODDIR/bin/extractfv" -o "$RUNTIME_DIR" -v "$abl" >> "$LOG_FILE" 2>&1; then
     write_log "$TEXT_EXTRACT_FAILED"
     return 1
   fi
-  if ! "$MODDIR/bin/patch_abl" "$RUNTIME_DIR/LinuxLoader.efi" "$RUNTIME_DIR/patched.efi" > "$RUNTIME_DIR/patch.log" 2>&1; then
+  if ! "$MODDIR/bin/patch_abl" "$RUNTIME_DIR/LinuxLoader.efi" "$RUNTIME_DIR/patched.efi" fake_locked > "$RUNTIME_DIR/patch.log" 2>&1 ||
+     ! "$MODDIR/bin/patch_abl" "$RUNTIME_DIR/LinuxLoader.efi" "$RUNTIME_DIR/normal.efi" normal >> "$RUNTIME_DIR/patch.log" 2>&1; then
     cat "$RUNTIME_DIR/patch.log" >> "$LOG_FILE"
     write_log "$TEXT_PATCH_FAILED"
     return 1
   fi
   cat "$RUNTIME_DIR/patch.log" >> "$LOG_FILE"
-  [ -s "$RUNTIME_DIR/patched.efi" ] || { write_log "$TEXT_PATCH_FAILED"; return 1; }
+  [ -s "$RUNTIME_DIR/patched.efi" ] && [ -s "$RUNTIME_DIR/normal.efi" ] || { write_log "$TEXT_PATCH_FAILED"; return 1; }
 }
 
 update_efisp() {
@@ -323,14 +324,14 @@ update_efisp() {
 
   run_quiet "$TEXT_EFISP_MKDIR_FAILED" mkdir -p "$efisp_target" || return 1
 
+  run_quiet "$TEXT_EFISP_WRITE_FAILED" cp "$RUNTIME_DIR/patched.efi" "$efisp_target/boot.efi.pending" || return 1
+  run_quiet "$TEXT_EFISP_WRITE_FAILED" cp "$RUNTIME_DIR/normal.efi" "$efisp_target/boot_normal.efi.pending" || return 1
   if [ "$is_debug" != "yes" ] && [ -f "$efisp_target/boot.efi" ]; then
-    run_quiet "$TEXT_EFISP_WRITE_FAILED" mv "$efisp_target/boot.efi" "$efisp_target/boot_backup.efi" || return 1
+    run_quiet "$TEXT_EFISP_WRITE_FAILED" cp "$efisp_target/boot.efi" "$efisp_target/boot_backup.efi" || return 1
     write_log "$TEXT_BACKUP_BOOT"
   fi
-
-  if ! run_quiet "$TEXT_EFISP_WRITE_FAILED" cp "$RUNTIME_DIR/patched.efi" "$efisp_target/boot.efi"; then
-    return 1
-  fi
+  run_quiet "$TEXT_EFISP_WRITE_FAILED" mv "$efisp_target/boot_normal.efi.pending" "$efisp_target/boot_normal.efi" || return 1
+  run_quiet "$TEXT_EFISP_WRITE_FAILED" mv "$efisp_target/boot.efi.pending" "$efisp_target/boot.efi" || return 1
   place_efisp_tree_to "$efisp_target" || return 1
   sync
   write_log "$TEXT_EFISP_FILES_OK"

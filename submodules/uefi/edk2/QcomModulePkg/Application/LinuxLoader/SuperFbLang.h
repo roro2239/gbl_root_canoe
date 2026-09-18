@@ -2,9 +2,8 @@
  * Bilingual (English / Simplified Chinese) strings for the super-fastboot
  * boot menu.
  *
- * Only static UI chrome is translated.  Dynamic data - boot entry names,
- * file names, volume labels - is never translated, it is displayed verbatim
- * from the media.
+ * Static UI and the bundled Android mode entry names are translated.
+ * Other boot entry names, file names and volume labels remain verbatim.
  *
  * Copyright (c) 2026, contributors to the canoe ABL tree.
  * SPDX-License-Identifier: BSD-3-Clause
@@ -52,6 +51,8 @@ typedef enum {
   StrDirTruncated,
   StrVolumeLabelFmt,
   StrChooseVolume,
+  StrBootAndroidFakeLocked,
+  StrBootAndroidRealState,
   StrCount
 } SFB_STR_ID;
 

@@ -327,6 +327,25 @@ SfbShowFastbootMode (VOID)
   SfbBeginScreen (SfbStr (StrFastbootMode), NULL);
 }
 
+/* 仅映射随包提供的名称与路径组合，自定义名称仍按原文显示。 */
+STATIC
+CONST CHAR16 *
+SfbBootDisplayName (IN CONST CHAR16 *Name, IN CONST CHAR16 *FilePath)
+{
+  if (Name != NULL && FilePath != NULL) {
+    CONST CHAR16 *FileName = SfbGetFileName (FilePath);
+
+    if (StrCmp (Name, L"Android") == 0 && SfbStrCaseEqual (FileName, L"boot.efi")) {
+      return SfbStr (StrBootAndroidFakeLocked);
+    }
+    if (StrCmp (Name, L"Android (Real State)") == 0 &&
+        SfbStrCaseEqual (FileName, L"boot_normal.efi")) {
+      return SfbStr (StrBootAndroidRealState);
+    }
+  }
+  return (Name != NULL && Name[0] != L'\0') ? Name : L"...";
+}
+
 /*
  * Clear the menu away and announce the launch. The loaded image prints nothing
  * of its own until it takes over, so without this the boot menu would linger on
@@ -341,10 +360,7 @@ SfbShowBootingScreen (IN CONST CHAR16 *Name,
 
   if (ClearScreen) {
     UnicodeSPrint (Text, sizeof (Text), SfbStr (StrBooting),
-                   (Name != NULL && Name[0] != L'\0') ? Name : L"...");
-    if (FilePath != NULL && SfbStrCaseEqual (SfbGetFileName (FilePath), L"boot.efi")) {
-      Text[0] = L'\0';
-    }
+                   SfbBootDisplayName (Name, FilePath));
     SfbBeginScreen (Text, NULL);
     return;
   }
@@ -438,6 +454,7 @@ SfbDrawMenu (IN CONST SFB_MENU_STATE *Menu,
     } else {
       CONST CHAR16 *Text = Entry->Desc;
       switch (Entry->Kind) {
+      case SfbEntryEfiFile: Text = SfbBootDisplayName (Entry->Desc, Entry->Path); break;
       case SfbEntryFastboot: Text = SfbStr (StrEnterFastboot); break;
       case SfbEntrySelector: Text = SfbStr (StrEfiProgramSelector); break;
       case SfbEntryPowerOff: Text = SfbStr (StrPowerOff); break;

@@ -95,3 +95,19 @@
 ## 中文启动菜单与来源声明
 
 中文启动菜单移植自 [kepcry/gbl_root_canoe](https://github.com/kepcry/gbl_root_canoe)，采用内置中文点阵字库和 UEFI GOP 图形绘制。来源提交、移植范围、字体许可与再分发要求见 [第三方来源声明](THIRD_PARTY_NOTICES.md)。
+
+## 双启动模式与 fastboot
+
+工具包构建、模块安装及 WebUI 完整更新现在从同一份原始 ABL 生成两个启动文件：
+
+| 菜单项 | 文件 | 行为 |
+| --- | --- | --- |
+| 启动安卓（假回锁） | `boot.efi` | 假回锁，保留默认入口 |
+| 启动安卓（真实状态） | `boot_normal.efi` | 透传原始锁状态与启动验证状态 |
+| Android backup | `boot_backup.efi` | 模块更新前的默认启动文件（若存在） |
+
+两个模式均尝试绕过已知 OPlus `forceenablefastboot` 验证分支，假回锁模式也会生效。原本没有该验证标识的 ABL 保留原 fastboot 路径；已绕过的已知分支保持不变；存在标识但无法安全识别时构建失败，详情见补丁日志。仅更新 BDS/工具不会生成新的 loader，已有安装需执行完整修补更新才能获得真实状态入口。这两个随包入口在中文图形菜单中显示上述中文名称；BOOTENTRIES 仍保留 ASCII 名称与原文件路径，自定义名称不受影响。
+
+手动调用：`patch_abl 输入.efi 输出.efi normal` 或 `patch_abl 输入.efi 输出.efi fake_locked`；省略模式保持旧版假回锁行为。必须使用从原始 ABL 提取的 loader，不能用已假回锁产物生成真实状态模式。两种模式共享 GBL 与适用的去黄字补丁，但不共享假回锁状态修改。
+
+真实状态透传不保证 locked/green；假回锁不等于真实回锁；fastboot 分支绕过不代表解除所有命令权限或保证 fastbootd 可用。来源、许可证与适用边界见 [第三方来源声明](THIRD_PARTY_NOTICES.md)。

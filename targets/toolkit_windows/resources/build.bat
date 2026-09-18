@@ -1,31 +1,36 @@
 REM change to the directory of this script
 @echo off
 chcp 65001 >nul
-cd /d %~dp0
+cd /d "%~dp0"
 
+if exist extracted\LinuxLoader.efi del /Q extracted\LinuxLoader.efi
+if exist extracted\LinuxLoader.efi exit /b 1
+if exist efisp\boot.efi.pending del /Q efisp\boot.efi.pending
+if exist efisp\boot_normal.efi.pending del /Q efisp\boot_normal.efi.pending
 bin\extractfv images/abl.img
-if not exist extracted\LinuxLoader.efi (
-  echo ERROR: extractfv produced no LinuxLoader.efi
-  exit /b 1
-)
+if errorlevel 1 goto build_failed
+if not exist extracted\LinuxLoader.efi goto build_failed
 move /Y extracted\LinuxLoader.efi ABL_original.efi >nul
-bin\patch_abl ABL_original.efi efisp\boot.efi > patch_log.txt 2>&1
-if errorlevel 1 (
-  type patch_log.txt
-  echo ERROR: patch_abl failed
-  exit /b 1
+if errorlevel 1 goto build_failed
+bin\patch_abl ABL_original.efi efisp\boot.efi.pending fake_locked > patch_log.txt 2>&1
+if errorlevel 1 goto patch_failed
+bin\patch_abl ABL_original.efi efisp\boot_normal.efi.pending normal >> patch_log.txt 2>&1
+if errorlevel 1 goto patch_failed
+for %%F in (efisp\boot.efi.pending efisp\boot_normal.efi.pending) do (
+  if not exist %%F goto patch_failed
+  if %%~zF EQU 0 goto patch_failed
 )
 type patch_log.txt
-if not exist efisp\boot.efi (
-  echo ERROR: patch_abl produced no efisp/boot.efi
-  exit /b 1
-)
+move /Y efisp\boot_normal.efi.pending efisp\boot_normal.efi >nul
+if errorlevel 1 goto build_failed
+move /Y efisp\boot.efi.pending efisp\boot.efi >nul
+if errorlevel 1 goto build_failed
 
 set GBL_OK=yes
 findstr /C:"Warning: Failed to patch ABL GBL" patch_log.txt >nul && (
   set GBL_OK=no
   echo.
-  echo WARNING: No GBL exploit found in this ABL (Failed to patch ABL GBL).
+  echo 警告：未发现 GBL 漏洞，见下方安装说明。
   echo efisp/boot.efi is still produced and valid, but the abl partition must be
   echo downgraded to an older ABL with the GBL vulnerability before booting.
   echo 警告：此 ABL 中未找到 GBL 漏洞（Failed to patch ABL GBL）。
@@ -34,7 +39,8 @@ findstr /C:"Warning: Failed to patch ABL GBL" patch_log.txt >nul && (
 
 echo.
 echo ========================================
-echo Patched. Outputs:
+echo 补丁产物：
+echo   efisp/boot_normal.efi - 真实状态透传，两种模式均检查 OPlus fastboot 绕过
 echo   efisp/boot.efi     - cracked ABL loader (fake re-lock), the ANDROID boot entry
 echo   efisp/BOOTENTRIES  - boot entry list (includes the tools submenu)
 echo   efisp/tools/       - tools submenu (Reboot / BL / ARB tools)
@@ -51,7 +57,7 @@ echo    (create /mnt/vendor/persist/efisp first if needed, e.g. via MT Manager)
 echo 2. sync
 if "%GBL_OK%"=="no" (
   echo 3. Downgrade the abl partition to an older ABL with the GBL vulnerability
-  echo    (efisp/boot.efi and the abl partition do not need to match versions)
+  echo    efisp/boot.efi 与 abl 分区版本不必一致
   echo 4. Flash BDS.efi to the efisp partition:
   echo      dd if=BDS.efi of=/dev/block/by-name/efisp bs=4M
 ) else (
@@ -74,3 +80,12 @@ if "%GBL_OK%"=="no" (
   echo      dd if=BDS.efi of=/dev/block/by-name/efisp bs=4M
 )
 echo ========================================
+
+exit /b 0
+:patch_failed
+type patch_log.txt
+:build_failed
+echo 错误：构建或部署失败，请检查上方日志。
+if exist efisp\boot.efi.pending del /Q efisp\boot.efi.pending
+if exist efisp\boot_normal.efi.pending del /Q efisp\boot_normal.efi.pending
+exit /b 1

@@ -28,12 +28,13 @@ static const int16_t Patched[] = {
     -1, -1, -1, -1, -1, -1, -1, -1
 };
 
-int32_t patch_abl_bootstate(char* buffer, int32_t size,
-                          int8_t* lock_register_num, int32_t* offset) {
+static int32_t patch_abl_bootstate_ex(char* buffer, int32_t size,
+                                    int8_t* lock_register_num, int32_t* offset,
+                                    bool apply) {
     int32_t pattern_len = sizeof(Original) / sizeof(int16_t);
     int32_t patched_count = 0;
     if (size < pattern_len) return 0;
-    for (int32_t i = 0; i <= size - pattern_len; ++i) {
+    for (int32_t i = 0; i <= size - pattern_len; i += 4) {
         bool match = true;
         for (int32_t j = 0; j < pattern_len; ++j) {
             if (Original[j] != -1 && (uint8_t)buffer[i + j] != (uint8_t)Original[j]) {
@@ -44,11 +45,13 @@ int32_t patch_abl_bootstate(char* buffer, int32_t size,
             *lock_register_num = (int8_t)((uint8_t)buffer[i] & 0x1F);
             *offset = i;
             #ifndef DISABLE_PATCH_3
-            for (int32_t j = 0; j < pattern_len; ++j)
-                if (Patched[j] != -1) buffer[i + j] = (char)Patched[j];
+            if (apply) {
+                for (int32_t j = 0; j < pattern_len; ++j)
+                    if (Patched[j] != -1) buffer[i + j] = (char)Patched[j];
+            }
             #endif
             patched_count++;
-            i += pattern_len - 1;
+            i += pattern_len - 4;
         }
     }
     return patched_count;
@@ -173,35 +176,51 @@ int32_t patch_adrl_unlocked_to_locked(char* buffer, int32_t size, uint64_t load_
 
 #include "patchs/oplus/warning.h"
 #include "patchs/oplus/forceenablefastboot.h"
-bool PatchBuffer(char* data, int32_t size) {
+static bool patch_buffer_inplace(char* data, int32_t size, PatchMode mode) {
+    /* 只读定位必须先于假回锁写入；也防止把已做假回锁的输入当作真实状态来源。 */
+    int32_t offset = -1;
+    int8_t lock_register_num = -1;
+    int32_t num_patches = patch_abl_bootstate_ex(data, size, &lock_register_num, &offset, false);
+    if (num_patches != 1) {
+        printf("错误：原始启动状态锚点应唯一，实际找到 %d 处；请使用原始 ABL。\n", num_patches);
+        return false;
+    }
+    printf("补丁模式：%s\n", mode == PATCH_MODE_NORMAL ? "normal（真实状态透传）" : "fake_locked（假回锁）");
+
+    int32_t global_var_offset = -1;
+    if (find_ldrB_instructio_reverse(data, size, offset, lock_register_num,
+                                   &global_var_offset, empty_source_callback) != SUCCESS) {
+        printf("错误：无法定位原始锁状态来源，停止生成产物。\n");
+        return false;
+    }
+
+    /* 两种模式使用相同的 fastboot 验证绕过，不能依赖被伪装的锁状态。 */
+    if (patch_fastboot(data, size) == FASTBOOT_PATCH_ERROR) return false;
     if (patch_abl_gbl(data, size) != 0)
         printf("Warning: Failed to patch ABL GBL\n");
 
-    int32_t patched_adrl = patch_adrl_unlocked_to_locked(data, size, 0);
-    if (patched_adrl == 0){
-        printf("Warning: ADRL triple not found, skipping\n");
-        // not critical, continue with other patches
+    if (mode == PATCH_MODE_NORMAL) {
+        if (!patch_warning(data, size, global_var_offset)) {
+            printf("提示：未应用 OPlus 去黄字补丁，保留原警告显示。\n");
+        }
+        printf("真实状态模式：未修改状态字符串、锁状态读取及状态写回指令。\n");
+        return true;
     }
 
-    if(patched_adrl > 1){
-        printf("Warning: Multiple ADRL triples patched (%d), verify if all are correct\n", patched_adrl);
-        return false; //cr
+    int32_t patched_adrl = patch_adrl_unlocked_to_locked(data, size, 0);
+    if (patched_adrl != 1) {
+        printf("错误：假回锁状态字符串应匹配唯一位置，实际为 %d，停止生成产物。\n", patched_adrl);
+        return false;
     }
-    int32_t offset = -1;
-    int8_t lock_register_num = -1;
-    int32_t num_patches = patch_abl_bootstate(data, size, &lock_register_num, &offset);
-    if (num_patches == 0) {
-        printf("Error: Failed to find/patch ABL Boot State\n");
-        return 0;
-    }
+    patch_abl_bootstate_ex(data, size, &lock_register_num, &offset, true);
     printf("Anchor offset : 0x%X\n", offset);
     printf("Lock register : W%d\n", (int)lock_register_num);
     printf("Boot patches: %d\n", num_patches);
 
-    int32_t global_var_offset = -1;
     if (find_ldrB_instructio_reverse(data, size, offset, lock_register_num, &global_var_offset, source_callback) != 0) {
-        printf("Warning: Failed to patch LDRB->STRB chain for W%d\n",
+        printf("错误：W%d 的假回锁状态读写链修补失败，停止生成产物。\n",
                (int)lock_register_num);
+        return false;
     }
     printf("Global variable offset (for warning patch): 0x%X\n", global_var_offset);
     // ===================== 启用去黄字补丁 =====================
@@ -212,11 +231,26 @@ bool PatchBuffer(char* data, int32_t size) {
         printf("OPlus Warning: patch_warning failed\n");
     }
 
-    //force enable fastboot for unofficially unlock
-    if (!patch_fastboot(data, size, global_var_offset)) {
-        printf("OPlus Warning: patch_fastboot failed\n");
-    }
     // ==========================================================
 
     return 1;
+}
+
+bool PatchBufferEx(char* data, int32_t size, PatchMode mode) {
+    if (data == NULL || size <= 0 ||
+        (mode != PATCH_MODE_NORMAL && mode != PATCH_MODE_FAKE_LOCKED)) return false;
+    char* pending = malloc((size_t)size);
+    if (pending == NULL) {
+        printf("错误：无法分配补丁缓冲区。\n");
+        return false;
+    }
+    memcpy(pending, data, (size_t)size);
+    bool result = patch_buffer_inplace(pending, size, mode);
+    if (result) memcpy(data, pending, (size_t)size);
+    free(pending);
+    return result;
+}
+
+bool PatchBuffer(char* data, int32_t size) {
+    return PatchBufferEx(data, size, PATCH_MODE_FAKE_LOCKED);
 }

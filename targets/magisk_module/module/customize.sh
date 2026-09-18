@@ -321,10 +321,12 @@ while true; do
       abort "slot detection failed"
     fi
     abl_part="$BY_NAME_DIR/abl$current_slot"
-    rm -f "$RUNTIME_DIR/LinuxLoader.efi" "$RUNTIME_DIR/patched.efi"
+    rm -f "$RUNTIME_DIR/LinuxLoader.efi" "$RUNTIME_DIR/patched.efi" "$RUNTIME_DIR/normal.efi" "$RUNTIME_DIR/patch.log"
     if ! "$MODPATH/bin/extractfv" -o "$RUNTIME_DIR" -v "$abl_part" >> "$RUNTIME_DIR/extract.log" 2>&1 ||
-       ! "$MODPATH/bin/patch_abl" "$RUNTIME_DIR/LinuxLoader.efi" "$RUNTIME_DIR/patched.efi" >> "$RUNTIME_DIR/patch.log" 2>&1 ||
-       [ ! -s "$RUNTIME_DIR/patched.efi" ]; then
+       ! "$MODPATH/bin/patch_abl" "$RUNTIME_DIR/LinuxLoader.efi" "$RUNTIME_DIR/patched.efi" fake_locked >> "$RUNTIME_DIR/patch.log" 2>&1 ||
+       ! "$MODPATH/bin/patch_abl" "$RUNTIME_DIR/LinuxLoader.efi" "$RUNTIME_DIR/normal.efi" normal >> "$RUNTIME_DIR/patch.log" 2>&1 ||
+       [ ! -s "$RUNTIME_DIR/patched.efi" ] || [ ! -s "$RUNTIME_DIR/normal.efi" ]; then
+      cat "$RUNTIME_DIR/patch.log"
       ui_print "$T_PATCH_FAIL"
       abort "patch failed"
     fi
@@ -369,10 +371,18 @@ while true; do
       abort "persist not mounted"
     fi
     mkdir -p "$EFISP_DIR" || { ui_print "$T_EFISP_DIR_FAIL"; abort "efisp mkdir failed"; }
-    [ -f "$EFISP_DIR/boot.efi" ] && mv "$EFISP_DIR/boot.efi" "$EFISP_DIR/boot_backup.efi"
-    if ! cp "$RUNTIME_DIR/patched.efi" "$EFISP_DIR/boot.efi"; then
+    if ! cp "$RUNTIME_DIR/patched.efi" "$EFISP_DIR/boot.efi.pending" ||
+       ! cp "$RUNTIME_DIR/normal.efi" "$EFISP_DIR/boot_normal.efi.pending"; then
       ui_print "$T_EFISP_WRITE_FAIL"
-      abort "efisp write failed"
+      abort "双模式启动文件暂存失败"
+    fi
+    if [ -f "$EFISP_DIR/boot.efi" ]; then
+      cp "$EFISP_DIR/boot.efi" "$EFISP_DIR/boot_backup.efi" || abort "启动备份失败"
+    fi
+    if ! mv "$EFISP_DIR/boot_normal.efi.pending" "$EFISP_DIR/boot_normal.efi" ||
+       ! mv "$EFISP_DIR/boot.efi.pending" "$EFISP_DIR/boot.efi"; then
+      ui_print "$T_EFISP_WRITE_FAIL"
+      abort "双模式启动文件部署失败"
     fi
     cp -r "$MODPATH/efisp/." "$EFISP_DIR/" || { ui_print "$T_EFISP_WRITE_FAIL"; abort "efisp write failed"; }
     sync

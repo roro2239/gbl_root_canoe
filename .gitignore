@@ -31,6 +31,9 @@ extracted/
 # VS Code
 .vscode/
 
+# JetBrains 本地项目配置
+/.idea/
+
 submodules/uefi/edk2/build_modulepkg.log
 
 submodules/unsigned_abl.elf

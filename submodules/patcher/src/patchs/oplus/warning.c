@@ -1,7 +1,7 @@
 #include "patchs/oplus/warning.h"
 #include "arm64_inst/utils.h"
 int32_t find_warning_offset(char* buffer, int32_t size, uint64_t load_base) {
-    if (size < 24) return 0;
+    if (size < 24) return -1;
 
     for (int32_t i = 0; i <= size - 24; i += 4) {
         int64_t off0 = calc_adrl_file_offset(buffer, i,      load_base);
@@ -38,8 +38,8 @@ bool patch_warning(char* buffer, int32_t size, int32_t global_var_offset) {
             printf("Warning jump source var: 0x%X Matched\n", offset);
             write_instr(buffer,i,change_rt(&d, 31)); // change to CBZ WZR
             printf("Patched CBZ at 0x%X to use WZR, warning disabled\n", i);
-            break;
+            return true;
         }
     }
-    return true;
+    return false;
 }

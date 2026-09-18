@@ -52,6 +52,8 @@ STATIC CONST SFB_LANG_STRING mSfbStrings[StrCount] = {
   { L"(directory has more than %u entries; rest not shown)", L"（目录超过 %u 项，其余未显示）" },
   { L"Volume %u: %s", L"卷 %u：%s" },
   { L"Choose a volume to browse.", L"选择要浏览的卷。" },
+  { L"Android (Fake Lock)", L"启动安卓（假回锁）" },
+  { L"Android (Real State)", L"启动安卓（真实状态）" },
 };
 
 CONST CHAR16 *

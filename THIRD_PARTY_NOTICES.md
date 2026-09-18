@@ -1,4 +1,6 @@
-# 中文启动菜单来源声明
+# 第三方来源声明
+
+## 中文启动菜单
 
 本项目的中文启动菜单移植并改编自 [kepcry/gbl_root_canoe](https://github.com/kepcry/gbl_root_canoe)，来源提交为 [`66a81b4f9f4548e2d9ebfcb852eb343c628aa723`](https://github.com/kepcry/gbl_root_canoe/tree/66a81b4f9f4548e2d9ebfcb852eb343c628aa723)。感谢该仓库作者及贡献者提供的中文界面实现。
 
@@ -29,3 +31,11 @@ pwsh -NoProfile -File tools/gen_sfb_font/gen_sfb_font.ps1 -FontFile "字体所�
 ## 显示边界
 
 具备可用 GOP 且分辨率至少为 480×480 时，现有菜单及提示默认显示中文；无可用图形输出时明确提示初始化失败并使用英文控制台。自定义启动项名称和文件名按原有逻辑处理，未扩展 `BOOTENTRIES` 的 ASCII 格式；字库以外字符显示空心方框。独立启动的其他 EFI 应用使用各自界面。
+
+## 真实状态透传与 OPlus fastboot 补丁
+
+双模式设计移植并改编自 [ditvelo/gbl_root_canoe](https://github.com/ditvelo/gbl_root_canoe)，固定来源提交为 [`2cf345a299df3f8b7172d6ad2fa5985e67fe53d6`](https://github.com/ditvelo/gbl_root_canoe/tree/2cf345a299df3f8b7172d6ad2fa5985e67fe53d6)，遵循上游 GPL-3.0，许可证全文见根目录 [LICENSE](LICENSE)。感谢上游作者及贡献者；本声明不表示其为本项目背书。
+
+移植涉及 `submodules/patcher` 的 `PatchMode`、`PatchBufferEx`、真实锁状态来源定位及 `normal` / `fake_locked` 模式分流，并参考其 `forceenablefastboot` 的 OPlus 验证分支绕过。本项目保留旧调用默认假回锁，增加分支布局、目标边界、唯一匹配与重复补丁检查；同时接入模块安装、WebUI 后端及三平台工具包的双产物流程。两个模式都独立从原始 ABL 生成，并共同执行 fastboot 分支检查。
+
+`normal` 保留原始 ABL 的锁状态、verified boot 状态计算及写回，不保证设备呈现 locked 或 green。`fake_locked` 仅改变软件报告链路，不会真正回锁，也不会改变 TEE 或硬件安全状态。fastboot 补丁只针对已识别的 OPlus 验证错误分支，不解除全部 fastboot 命令权限、不保证 fastbootd 可用。未发现标识时保留原路径并记录未匹配；发现标识但布局不受支持时停止生成，不能当作成功。真机兼容性需单独验证。
