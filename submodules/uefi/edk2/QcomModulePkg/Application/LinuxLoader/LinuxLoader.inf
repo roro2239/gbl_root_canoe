@@ -76,6 +76,13 @@
 	SuperFbEntries.c
 	SuperFbMenu.c
 	SuperFbBrowser.c
+	SuperFbLang.c
+	SuperFbLang.h
+	SuperFbFont.c
+	SuperFbFont.h
+	SuperFbFontData.c
+	SuperFbGfx.c
+	SuperFbGfx.h
 
 [Packages]
 	ArmPkg/ArmPkg.dec
@@ -144,6 +151,7 @@
 	gEfiPartTypeSystemPartGuid
 
 [Protocols]
+	gEfiGraphicsOutputProtocolGuid
 	gEfiSimpleTextInputExProtocolGuid
 	gEfiBlockIoProtocolGuid
 	gEfiLoadedImageProtocolGuid

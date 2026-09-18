@@ -3,6 +3,8 @@ clean:
 copy_resources:
 	mkdir -p build/module
 	cp -r module/* build/module/
+	cp ../../THIRD_PARTY_NOTICES.md ../../LICENSE build/module/
+	cp -r ../../licenses build/module/
 	set -a; . ../../VERSION; set +a; \
 		sed -e "s/@VERSION@/$$VERSION/" -e "s/@VERSION_CODE@/$$VERSION_CODE/" \
 		module/module.prop.in > build/module/module.prop

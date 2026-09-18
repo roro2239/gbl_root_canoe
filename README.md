@@ -92,3 +92,7 @@ Common commands include:
 2. `boot.efi` / `ABL.efi`: The cracked ABL with fake re-lock (the module names it `boot.efi`; the toolkit names it `ABL.efi`), placed on `persist` under `efisp/`.
 3. `LinuxLoader.efi` / `ABL_original.efi`: The original unpatched ABL. For analysis; do not flash to `efisp`.
 4. `BOOTENTRIES`: Boot entry list, format `<name>:<path relative to efisp/>`.
+
+## 中文启动菜单与来源声明
+
+中文启动菜单移植自 [kepcry/gbl_root_canoe](https://github.com/kepcry/gbl_root_canoe)，采用内置中文点阵字库和 UEFI GOP 图形绘制。来源提交、移植范围、字体许可与再分发要求见 [第三方来源声明](THIRD_PARTY_NOTICES.md)。

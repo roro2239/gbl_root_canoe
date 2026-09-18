@@ -4,6 +4,8 @@ copy_resources:
 	mkdir -p build/toolkit
 	mkdir -p build/toolkit/bin
 	cp -r resources/* build/toolkit/
+	cp ../../THIRD_PARTY_NOTICES.md ../../LICENSE build/toolkit/
+	cp -r ../../licenses build/toolkit/
 submodule_uefi: copy_resources
 	cd ../../submodules/uefi && make build && make tools
 	cp ../../submodules/uefi/build/BDS.efi ./build/toolkit/BDS.efi

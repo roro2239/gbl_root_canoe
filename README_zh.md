@@ -91,3 +91,7 @@
 2. `boot.efi` / `ABL.efi`：带假回锁的破解 ABL（模块中名为 `boot.efi`；toolkit 中名为 `ABL.efi`），存放在 `persist` 的 `efisp/` 下。
 3. `LinuxLoader.efi` / `ABL_original.efi`：原始未破解 ABL。用于分析，**不要刷入 `efisp`**。
 4. `BOOTENTRIES`：启动项列表，格式 `<名称>:<相对 efisp/ 的路径>`。
+
+## 中文启动菜单与来源声明
+
+中文启动菜单移植自 [kepcry/gbl_root_canoe](https://github.com/kepcry/gbl_root_canoe)，采用内置中文点阵字库和 UEFI GOP 图形绘制。来源提交、移植范围、字体许可与再分发要求见 [第三方来源声明](THIRD_PARTY_NOTICES.md)。

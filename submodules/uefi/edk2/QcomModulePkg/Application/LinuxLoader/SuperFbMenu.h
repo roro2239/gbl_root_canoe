@@ -365,6 +365,15 @@ SfbWaitForKey (IN UINT32 TimeoutMs);
 /* Rows of list content a screen shows before it starts scrolling. */
 #define SFB_VISIBLE_ROWS  12
 
+UINTN
+SfbVisibleRows (VOID);
+
+VOID
+SfbPanelNote (IN CONST CHAR16 *Text);
+
+VOID
+SfbDrawCountNote (IN UINTN StringId, IN UINT32 Count);
+
 VOID
 SfbBeginScreen (IN CONST CHAR16 *Title, IN CONST CHAR16 *Subtitle OPTIONAL);
 

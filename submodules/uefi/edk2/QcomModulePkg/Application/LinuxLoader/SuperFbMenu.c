@@ -1,5 +1,5 @@
 /*
- * Console UI for the super-fastboot boot menu.
+ * Graphical and console UI for the super-fastboot boot menu.
  *
  * Three keys drive everything: volume up and volume down move the cursor, and
  * power confirms.
@@ -9,6 +9,8 @@
  */
 
 #include "SuperFbMenu.h"
+#include "SuperFbLang.h"
+#include "SuperFbGfx.h"
 
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
@@ -129,11 +131,71 @@ SfbStrCaseEqual (IN CONST CHAR16 *Str1, IN CONST CHAR16 *Str2)
   return *Str1 == L'\0' && *Str2 == L'\0';
 }
 
+STATIC UINT32 mPanelTop;
+STATIC UINT32 mRowsY;
+STATIC UINT32 mNotesY;
+STATIC UINT32 mFooterY;
+STATIC UINTN  mVisibleRows = SFB_VISIBLE_ROWS;
+STATIC UINTN  mRowIndex;
+STATIC UINTN  mNoteIndex;
+
+STATIC
+VOID
+SfbDrawCentered (IN CONST CHAR16 *Text, IN UINT32 Y, IN UINT32 Color)
+{
+  UINT32 W;
+  UINT32 TextW;
+
+  SfbGfxGetScreen (&W, NULL);
+  TextW = SfbGfxTextWidth (Text);
+  SfbGfxDrawText (Text, TextW < W ? (W - TextW) / 2 : 0, Y,
+                  Color, SFB_COLOR_PANEL);
+}
+
+UINTN
+SfbVisibleRows (VOID)
+{
+  return mVisibleRows;
+}
+
 VOID
 SfbBeginScreen (IN CONST CHAR16 *Title, IN CONST CHAR16 *Subtitle)
 {
+  UINT32 W;
+  UINT32 H;
+  UINT32 PanelH;
+  UINT32 Reserved;
+
+  if (SfbGfxInit ()) {
+    SfbGfxGetScreen (&W, &H);
+    /* 为两条列表提示及页脚预留空间，滚动窗口使用实际可见行数。 */
+    Reserved = 72 + 80 + 60 + (Subtitle != NULL ? 44 : 0);
+    PanelH = MAX (H / 3, Reserved + 3 * 52);
+    PanelH = MIN (PanelH, H - 32);
+    mVisibleRows = MIN ((PanelH - Reserved) / 52, SFB_VISIBLE_ROWS);
+    mPanelTop = (H - PanelH) / 2;
+    mRowsY = mPanelTop + 72;
+    mNotesY = mRowsY + (UINT32)mVisibleRows * 52;
+    mFooterY = mPanelTop + PanelH - 48;
+    mRowIndex = 0;
+    mNoteIndex = 0;
+
+    gST->ConOut->EnableCursor (gST->ConOut, FALSE);
+    SfbGfxClear (SFB_COLOR_BG);
+    SfbGfxFillRect (0, mPanelTop, W, PanelH, SFB_COLOR_PANEL);
+    SfbGfxHLine (mPanelTop, 0, W - 1, 2, SFB_COLOR_ACCENT);
+    SfbGfxHLine (mPanelTop + PanelH - 2, 0, W - 1, 2, SFB_COLOR_ACCENT);
+    SfbDrawCentered (Title, mPanelTop + 20, SFB_COLOR_ACCENT);
+    if (Subtitle != NULL) {
+      SfbDrawCentered (Subtitle, mFooterY - 44, SFB_COLOR_ACCENT_D);
+    }
+    return;
+  }
+
+  mVisibleRows = SFB_VISIBLE_ROWS;
   gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_TITLE);
   gST->ConOut->ClearScreen (gST->ConOut);
+  Print (L"Chinese UI unavailable (graphics initialization failed).\r\n");
   Print (L"%s\r\n", Title);
   gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_NORMAL);
   if (Subtitle != NULL) {
@@ -145,6 +207,10 @@ SfbBeginScreen (IN CONST CHAR16 *Title, IN CONST CHAR16 *Subtitle)
 VOID
 SfbEndScreen (IN CONST CHAR16 *Footer)
 {
+  if (SfbGfxActive ()) {
+    SfbDrawCentered (Footer, mFooterY, SFB_COLOR_ACCENT_D);
+    return;
+  }
   gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_NORMAL);
   Print (L"\r\n%s\r\n", Footer);
 }
@@ -152,11 +218,53 @@ SfbEndScreen (IN CONST CHAR16 *Footer)
 VOID
 SfbDrawRow (IN BOOLEAN Selected, IN CONST CHAR16 *Marker, IN CONST CHAR16 *Text)
 {
+  CHAR16 Full[SFB_PATH_CHARS + 8];
+  UINT32 W;
+  UINT32 Y;
+
+  if (SfbGfxActive ()) {
+    if (mRowIndex >= mVisibleRows) {
+      return;
+    }
+    SfbGfxGetScreen (&W, NULL);
+    Y = mRowsY + (UINT32)mRowIndex++ * 52;
+    UnicodeSPrint (Full, sizeof (Full), L"%s %s %s",
+                   Selected ? L">" : L" ", Marker, Text);
+    if (Selected) {
+      SfbGfxFillRect (0, Y, W, 44, SFB_COLOR_SEL_BG);
+    }
+    SfbGfxDrawText (Full, 24, Y + 6,
+                    Selected ? SFB_COLOR_SEL_FG : SFB_COLOR_TEXT,
+                    Selected ? SFB_COLOR_SEL_BG : SFB_COLOR_PANEL);
+    return;
+  }
   gST->ConOut->SetAttribute (gST->ConOut,
                              Selected ? SFB_ATTR_SELECTED : SFB_ATTR_NORMAL);
   Print (L"%s %s %s", Selected ? L">" : L" ", Marker, Text);
   gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_NORMAL);
   Print (L"\r\n");
+}
+
+VOID
+SfbPanelNote (IN CONST CHAR16 *Text)
+{
+  if (SfbGfxActive ()) {
+    if (mNoteIndex < 2) {
+      SfbGfxDrawText (Text, 24, mNotesY + (UINT32)mNoteIndex++ * 36,
+                      SFB_COLOR_ACCENT_D, SFB_COLOR_PANEL);
+    }
+    return;
+  }
+  Print (L"  %s\r\n", Text);
+}
+
+VOID
+SfbDrawCountNote (IN UINTN StringId, IN UINT32 Count)
+{
+  CHAR16 Text[128];
+
+  UnicodeSPrint (Text, sizeof (Text), SfbStr (StringId), Count);
+  SfbPanelNote (Text);
 }
 
 /*
@@ -198,9 +306,12 @@ SfbMoveCursor (IN OUT UINTN *Cursor, IN UINTN Count, IN SFB_KEY Key)
 VOID
 SfbReportStatus (IN CONST CHAR16 *What, IN EFI_STATUS Status)
 {
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_NORMAL);
-  Print (L"\r\n%s: %r\r\n", What, Status);
-  Print (L"Press power to continue.\r\n");
+  CHAR16 Detail[96];
+
+  UnicodeSPrint (Detail, sizeof (Detail), L"%r (0x%lx)", Status, (UINT64)Status);
+  SfbBeginScreen (What, NULL);
+  SfbPanelNote (Detail);
+  SfbEndScreen (SfbStr (StrPressPower));
   SfbWaitForKey (0);
 }
 
@@ -213,13 +324,7 @@ SfbReportStatus (IN CONST CHAR16 *What, IN EFI_STATUS Status)
 VOID
 SfbShowFastbootMode (VOID)
 {
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_TITLE);
-  gST->ConOut->ClearScreen (gST->ConOut);
-  gST->ConOut->EnableCursor (gST->ConOut, FALSE);
-
-  Print (L"FASTBOOT MODE\r\n");
-
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_NORMAL);
+  SfbBeginScreen (SfbStr (StrFastbootMode), NULL);
 }
 
 /*
@@ -232,15 +337,24 @@ SfbShowBootingScreen (IN CONST CHAR16 *Name,
                       IN CONST CHAR16 *FilePath,
                       IN BOOLEAN       ClearScreen)
 {
+  CHAR16 Text[SFB_DESC_CHARS + 32];
+
+  if (ClearScreen) {
+    UnicodeSPrint (Text, sizeof (Text), SfbStr (StrBooting),
+                   (Name != NULL && Name[0] != L'\0') ? Name : L"...");
+    if (FilePath != NULL && SfbStrCaseEqual (SfbGetFileName (FilePath), L"boot.efi")) {
+      Text[0] = L'\0';
+    }
+    SfbBeginScreen (Text, NULL);
+    return;
+  }
+
   gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_TITLE);
   /*
    * An unattended default boot must not blank whatever is already on screen
    * (typically the boot splash): only clear when the launch came from the menu,
    * where the menu itself is what needs clearing away.
    */
-  if (ClearScreen) {
-    gST->ConOut->ClearScreen (gST->ConOut);
-  }
   gST->ConOut->EnableCursor (gST->ConOut, FALSE);
 
   if (FilePath != NULL) {
@@ -263,13 +377,7 @@ SfbShowBootingScreen (IN CONST CHAR16 *Name,
 VOID
 SfbShowActionScreen (IN CONST CHAR16 *Text)
 {
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_TITLE);
-  gST->ConOut->ClearScreen (gST->ConOut);
-  gST->ConOut->EnableCursor (gST->ConOut, FALSE);
-
-  Print (L"%s\r\n", Text);
-
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_NORMAL);
+  SfbBeginScreen (Text, NULL);
 }
 
 /*
@@ -282,13 +390,7 @@ SfbShowActionScreen (IN CONST CHAR16 *Text)
 VOID
 SfbShowEnteringMenu (VOID)
 {
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_TITLE);
-  gST->ConOut->ClearScreen (gST->ConOut);
-  gST->ConOut->EnableCursor (gST->ConOut, FALSE);
-
-  Print (L"Entering Boot Menu\r\n");
-
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_NORMAL);
+  SfbBeginScreen (SfbStr (StrEnteringBootMenu), NULL);
 
   /* Wait for the key to be released... */
   gBS->Stall (SFB_ENTER_MENU_DELAY_S * 1000 * 1000);
@@ -313,11 +415,11 @@ SfbDrawMenu (IN CONST SFB_MENU_STATE *Menu,
   SfbBeginScreen (Title, NULL);
 
   if (Menu->Count == 0) {
-    Print (L"  No boot entries found.\r\n");
+    SfbPanelNote (SfbStr (StrNoEntries));
   }
 
-  Start = SfbWindowStart (Cursor, Menu->Count, SFB_VISIBLE_ROWS);
-  Last = Start + SFB_VISIBLE_ROWS;
+  Start = SfbWindowStart (Cursor, Menu->Count, SfbVisibleRows ());
+  Last = Start + SfbVisibleRows ();
   if (Last > Menu->Count) {
     Last = Menu->Count;
   }
@@ -334,15 +436,24 @@ SfbDrawMenu (IN CONST SFB_MENU_STATE *Menu,
       UnicodeSPrint (Text, sizeof (Text), L"%s >", Entry->Desc);
       SfbDrawRow ((BOOLEAN)(Index == Cursor), Marker, Text);
     } else {
-      SfbDrawRow ((BOOLEAN)(Index == Cursor), Marker, Entry->Desc);
+      CONST CHAR16 *Text = Entry->Desc;
+      switch (Entry->Kind) {
+      case SfbEntryFastboot: Text = SfbStr (StrEnterFastboot); break;
+      case SfbEntrySelector: Text = SfbStr (StrEfiProgramSelector); break;
+      case SfbEntryPowerOff: Text = SfbStr (StrPowerOff); break;
+      case SfbEntryRestart:  Text = SfbStr (StrRestart); break;
+      case SfbEntryBack:     Text = SfbStr (StrBack); break;
+      default: break;
+      }
+      SfbDrawRow ((BOOLEAN)(Index == Cursor), Marker, Text);
     }
   }
 
   if (Last < Menu->Count) {
-    Print (L"    ... %u more\r\n", (UINT32)(Menu->Count - Last));
+    SfbDrawCountNote (StrMore, (UINT32)(Menu->Count - Last));
   }
 
-  SfbEndScreen (L"Vol Up/Down: move   Power: select");
+  SfbEndScreen (SfbStr (StrKeyNavSelect));
 }
 
 /*
@@ -409,7 +520,7 @@ SfbRunSubMenu (IN EFI_HANDLE   Volume,
 
     case SfbEntrySubmenu:
       if (Depth >= SFB_MAX_SUBMENU_DEPTH) {
-        SfbReportStatus (L"Submenu too deep", EFI_BUFFER_TOO_SMALL);
+        SfbReportStatus (SfbStr (StrSubmenuTooDeep), EFI_BUFFER_TOO_SMALL);
       } else {
         SfbRunSubMenu (Menu->Entry[Chosen].Volume,
                        Menu->Entry[Chosen].Path,
@@ -424,7 +535,7 @@ SfbRunSubMenu (IN EFI_HANDLE   Volume,
     default:
       Status = SfbLaunchEntry (&Menu->Entry[Chosen], TRUE, TRUE);//Entries in submenu never defaults
       if (EFI_ERROR (Status)) {
-        SfbReportStatus (L"Boot failed", Status);
+        SfbReportStatus (SfbStr (StrBootFailed), Status);
       }
       Rebuild = TRUE;
       break;
@@ -458,7 +569,7 @@ SfbRunBootMenu (VOID)
       Rebuild = FALSE;
     }
 
-    SfbDrawMenu (&Menu, Cursor, L"Boot Menu");
+    SfbDrawMenu (&Menu, Cursor, SfbStr (StrBootMenu));
 
     /* The menu is purely interactive: it waits for a key indefinitely and
      * never launches anything unattended. */
@@ -501,12 +612,12 @@ SfbRunBootMenu (VOID)
       break;
 
     case SfbEntryPowerOff:
-      SfbShowActionScreen (L"Powering off...");
+      SfbShowActionScreen (SfbStr (StrPoweringOff));
       ShutdownDevice ();
       break;
 
     case SfbEntryRestart:
-      SfbShowActionScreen (L"Restarting...");
+      SfbShowActionScreen (SfbStr (StrRestarting));
       RebootDevice (NORMAL_MODE);
       break;
 
@@ -514,7 +625,7 @@ SfbRunBootMenu (VOID)
     default:
       Status = SfbLaunchEntry (&Menu.Entry[Chosen], FALSE, TRUE);
       if (EFI_ERROR (Status)) {
-        SfbReportStatus (L"Boot failed", Status);
+        SfbReportStatus (SfbStr (StrBootFailed), Status);
       }
       /* Media or variables may have changed while the image ran. */
       Rebuild = TRUE;

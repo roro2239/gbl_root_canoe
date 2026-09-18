@@ -1,0 +1,313 @@
+/*
+ * GOP renderer implementation.  All drawing funnels through Gop->Blt using
+ * EFI_GRAPHICS_OUTPUT_BLT_PIXEL, whose field order (Blue, Green, Red) is
+ * defined by the spec regardless of the frame buffer pixel format.
+ *
+ * Copyright (c) 2026, contributors to the canoe ABL tree.
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
+#include "SuperFbGfx.h"
+#include "SuperFbFont.h"
+
+#include <Library/BaseLib.h>
+#include <Library/BaseMemoryLib.h>
+#include <Library/DebugLib.h>
+#include <Library/MemoryAllocationLib.h>
+#include <Library/UefiBootServicesTableLib.h>
+#include <Protocol/GraphicsOutput.h>
+
+STATIC EFI_GRAPHICS_OUTPUT_PROTOCOL  *mSfbGop = NULL;
+STATIC UINT32                        mSfbScreenW = 0;
+STATIC UINT32                        mSfbScreenH = 0;
+
+STATIC
+VOID
+SfbGfxPixel (IN EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Pix, IN UINT32 Color)
+{
+  Pix->Blue     = (UINT8)(Color & 0xFF);
+  Pix->Green    = (UINT8)((Color >> 8) & 0xFF);
+  Pix->Red      = (UINT8)((Color >> 16) & 0xFF);
+  Pix->Reserved = 0;
+}
+
+BOOLEAN
+SfbGfxInit (VOID)
+{
+  EFI_STATUS  Status;
+
+  if (mSfbGop != NULL) {
+    return TRUE;
+  }
+
+  Status = gBS->LocateProtocol (&gEfiGraphicsOutputProtocolGuid, NULL,
+                                (VOID **)&mSfbGop);
+  if (EFI_ERROR (Status) || mSfbGop == NULL || mSfbGop->Mode == NULL ||
+      mSfbGop->Mode->Info == NULL || mSfbGop->Blt == NULL) {
+    DEBUG ((EFI_D_ERROR, "SFB: GOP unavailable: %r\n", Status));
+    mSfbGop = NULL;
+    return FALSE;
+  }
+
+  if (mSfbGop->Mode->Info->PixelFormat != PixelBlueGreenRedReserved8BitPerColor &&
+      mSfbGop->Mode->Info->PixelFormat != PixelRedGreenBlueReserved8BitPerColor) {
+    DEBUG ((EFI_D_WARN, "SFB: unsupported GOP pixel format %d\n",
+            mSfbGop->Mode->Info->PixelFormat));
+    mSfbGop = NULL;
+    return FALSE;
+  }
+
+  mSfbScreenW = mSfbGop->Mode->Info->HorizontalResolution;
+  mSfbScreenH = mSfbGop->Mode->Info->VerticalResolution;
+  if (mSfbScreenW < 480 || mSfbScreenH < 480) {
+    DEBUG ((EFI_D_ERROR, "SFB: display too small: %u x %u\n",
+            mSfbScreenW, mSfbScreenH));
+    mSfbGop = NULL;
+    return FALSE;
+  }
+
+  DEBUG ((EFI_D_INFO, "SFB: GOP %u x %u\n", mSfbScreenW, mSfbScreenH));
+  return TRUE;
+}
+
+BOOLEAN
+SfbGfxActive (VOID)
+{
+  return (BOOLEAN)(mSfbGop != NULL);
+}
+
+VOID
+SfbGfxGetScreen (OUT UINT32 *Width, OUT UINT32 *Height)
+{
+  if (Width != NULL) {
+    *Width = mSfbScreenW;
+  }
+  if (Height != NULL) {
+    *Height = mSfbScreenH;
+  }
+}
+
+VOID
+SfbGfxClear (IN UINT32 Color)
+{
+  if (!SfbGfxActive ()) {
+    return;
+  }
+
+  SfbGfxFillRect (0, 0, mSfbScreenW, mSfbScreenH, Color);
+}
+
+VOID
+SfbGfxFillRect (IN UINT32 X,
+                IN UINT32 Y,
+                IN UINT32 W,
+                IN UINT32 H,
+                IN UINT32 Color)
+{
+  EFI_GRAPHICS_OUTPUT_BLT_PIXEL  Pixel;
+  EFI_STATUS Status;
+
+  if (!SfbGfxActive () || W == 0 || H == 0 ||
+      X >= mSfbScreenW || Y >= mSfbScreenH) {
+    return;
+  }
+
+  SfbGfxPixel (&Pixel, Color);
+  W = MIN (W, mSfbScreenW - X);
+  H = MIN (H, mSfbScreenH - Y);
+  Status = mSfbGop->Blt (mSfbGop, &Pixel, EfiBltVideoFill, 0, 0, X, Y, W, H, 0);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((EFI_D_ERROR, "SFB: GOP fill failed: %r\n", Status));
+  }
+}
+
+VOID
+SfbGfxHLine (IN UINT32 Y,
+             IN UINT32 X0,
+             IN UINT32 X1,
+             IN UINT32 Thick,
+             IN UINT32 Color)
+{
+  if (X1 < X0) {
+    return;
+  }
+  SfbGfxFillRect (X0, Y, X1 - X0 + 1, Thick, Color);
+}
+
+UINT32
+SfbGfxTextWidth (IN CONST CHAR16 *Text)
+{
+  UINT32  Width = 0;
+  UINTN   Index;
+
+  for (Index = 0; Text[Index] != L'\0'; Index++) {
+    UINT32  Offset;
+    UINT8   GlyphWidth;
+    UINT8   Advance;
+
+    if (SfbFontGetGlyph (Text[Index], &Offset, &GlyphWidth, &Advance)) {
+      Width += Advance;
+    } else {
+      Width += SFB_FONT_CELL_H / 2;
+    }
+  }
+
+  return Width;
+}
+
+/*
+ * Blend one proportional glyph into a row buffer.  Alpha is 4-bit; a missing
+ * glyph is drawn as a hollow box.
+ */
+STATIC
+VOID
+SfbGfxBlendGlyph (IN OUT EFI_GRAPHICS_OUTPUT_BLT_PIXEL *Row,
+                  IN UINT32                            RowWidth,
+                  IN UINT32                            PenX,
+                  IN CHAR16                            Ch,
+                  IN UINT32                            Fg,
+                  IN UINT32                            Bg,
+                  OUT UINT32                           *Advance)
+{
+  EFI_GRAPHICS_OUTPUT_BLT_PIXEL  FgPix;
+  EFI_GRAPHICS_OUTPUT_BLT_PIXEL  BgPix;
+  UINT32                         Offset;
+  UINT8                          GlyphWidth;
+  UINT8                          GlyphAdvance;
+  UINT32                         X;
+  UINT32                         Y;
+
+  SfbGfxPixel (&FgPix, Fg);
+  SfbGfxPixel (&BgPix, Bg);
+
+  if (!SfbFontGetGlyph (Ch, &Offset, &GlyphWidth, &GlyphAdvance)) {
+    /* Hollow placeholder box for characters outside the font table. */
+    UINT32  BoxW = SFB_FONT_CELL_H / 2;
+
+    for (X = 0; X < BoxW; X++) {
+      Row[PenX + X] = FgPix;
+      Row[PenX + X + (SFB_FONT_CELL_H - 1) * RowWidth] = FgPix;
+    }
+    for (Y = 0; Y < SFB_FONT_CELL_H; Y++) {
+      Row[PenX + Y * RowWidth] = FgPix;
+      Row[PenX + BoxW - 1 + Y * RowWidth] = FgPix;
+    }
+    *Advance = BoxW;
+    return;
+  }
+
+  for (Y = 0; Y < SFB_FONT_CELL_H; Y++) {
+    for (X = 0; X < GlyphWidth; X++) {
+      UINTN   BitIndex = Y * GlyphWidth + X;
+      UINT8   Alpha = (UINT8)(gSfbFontBitmap[Offset + BitIndex / 2] >>
+                              ((BitIndex & 1) ? 0 : 4)) & 0xF;
+      UINTN   Dest = PenX + X + Y * RowWidth;
+
+      if (Alpha == SFB_FONT_MAX_ALPHA) {
+        Row[Dest] = FgPix;
+      } else if (Alpha != 0) {
+        Row[Dest].Blue  = (UINT8)(((UINTN)FgPix.Blue  * Alpha +
+                                   (UINTN)BgPix.Blue  * (SFB_FONT_MAX_ALPHA - Alpha)) /
+                                  SFB_FONT_MAX_ALPHA);
+        Row[Dest].Green = (UINT8)(((UINTN)FgPix.Green * Alpha +
+                                   (UINTN)BgPix.Green * (SFB_FONT_MAX_ALPHA - Alpha)) /
+                                  SFB_FONT_MAX_ALPHA);
+        Row[Dest].Red   = (UINT8)(((UINTN)FgPix.Red   * Alpha +
+                                   (UINTN)BgPix.Red   * (SFB_FONT_MAX_ALPHA - Alpha)) /
+                                  SFB_FONT_MAX_ALPHA);
+      }
+    }
+  }
+
+  *Advance = GlyphAdvance;
+}
+
+VOID
+SfbGfxDrawText (IN CONST CHAR16 *Text,
+                IN UINT32       X,
+                IN UINT32       Y,
+                IN UINT32       Fg,
+                IN UINT32       Bg)
+{
+  EFI_GRAPHICS_OUTPUT_BLT_PIXEL  *Row;
+  UINTN                           Length;
+  UINTN                           RowWidth;
+  UINTN                           MaxWidth;
+  UINTN                           Index;
+  UINT32                          PenX;
+  EFI_STATUS                      Status;
+
+  if (!SfbGfxActive () || Text == NULL || Y >= mSfbScreenH ||
+      SFB_FONT_CELL_H > mSfbScreenH - Y) {
+    return;
+  }
+
+  Length = StrLen (Text);
+  if (Length == 0) {
+    return;
+  }
+
+  /* Clip at the right edge of the screen. */
+  MaxWidth = (mSfbScreenW > X) ? mSfbScreenW - X : 0;
+  if (MaxWidth == 0) {
+    return;
+  }
+
+  /* Measure, then drop characters from the end until the text fits. */
+  while (TRUE) {
+    RowWidth = 0;
+    for (Index = 0; Index < Length; Index++) {
+      UINT32  Offset;
+      UINT8   GlyphWidth;
+      UINT8   Advance;
+
+      if (SfbFontGetGlyph (Text[Index], &Offset, &GlyphWidth, &Advance)) {
+        RowWidth += Advance;
+      } else {
+        RowWidth += SFB_FONT_CELL_H / 2;
+      }
+    }
+    if (RowWidth <= MaxWidth) {
+      break;
+    }
+    if (Length <= 1) {
+      return;
+    }
+    Length--;
+  }
+
+  Row = AllocateZeroPool (RowWidth * SFB_FONT_CELL_H * sizeof (*Row));
+  if (Row == NULL) {
+    DEBUG ((EFI_D_ERROR, "SFB: cannot allocate text bitmap (%u pixels)\n",
+            (UINT32)RowWidth));
+    return;
+  }
+
+  /* Pre-fill with the background color. */
+  {
+    EFI_GRAPHICS_OUTPUT_BLT_PIXEL  BgPix;
+    UINTN                          Pixel;
+
+    SfbGfxPixel (&BgPix, Bg);
+    for (Pixel = 0; Pixel < RowWidth * SFB_FONT_CELL_H; Pixel++) {
+      Row[Pixel] = BgPix;
+    }
+  }
+
+  PenX = 0;
+  for (Index = 0; Index < Length; Index++) {
+    UINT32  Advance;
+
+    SfbGfxBlendGlyph (Row, (UINT32)RowWidth, PenX, Text[Index], Fg, Bg,
+                      &Advance);
+    PenX += Advance;
+  }
+
+  Status = mSfbGop->Blt (mSfbGop, Row, EfiBltBufferToVideo, 0, 0, X, Y,
+                (UINT32)RowWidth, SFB_FONT_CELL_H,
+                RowWidth * sizeof (EFI_GRAPHICS_OUTPUT_BLT_PIXEL));
+  if (EFI_ERROR (Status)) {
+    DEBUG ((EFI_D_ERROR, "SFB: GOP text failed: %r\n", Status));
+  }
+  FreePool (Row);
+}
