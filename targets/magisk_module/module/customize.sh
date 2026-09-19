@@ -10,10 +10,6 @@ read_volume_key() {
 }
 
 detect_default_language() {
-  saved_language=$(ksud module config get user_lang 2>/dev/null)
-  case "$saved_language" in
-    zh|en) echo "$saved_language"; return ;;
-  esac
   system_locale=$(getprop persist.sys.locale 2>/dev/null)
   [ -n "$system_locale" ] || system_locale=$(getprop ro.product.locale 2>/dev/null)
   case "$system_locale" in
@@ -23,30 +19,12 @@ detect_default_language() {
 }
 
 LANG=$(detect_default_language)
-ui_print "============================================="
-ui_print "  Please select language / 请选择语言"
-ui_print "  Vol+ = Chinese  |  Vol- = English"
-ui_print "  10s keep current / 10秒后保持当前: $LANG"
-ui_print "============================================="
-
-language_start=$(date +%s)
-while [ "$(($(date +%s) - language_start))" -lt 10 ]; do
-  keyevent=$(read_volume_key)
-  if [ "$keyevent" = "up" ]; then
-    LANG=zh
-    break
-  elif [ "$keyevent" = "down" ]; then
-    LANG=en
-    break
-  fi
-done
-
 if [ "$LANG" = "zh" ]; then
-  ui_print "[已选择中文 / Chinese selected]"
+  ui_print "[自动识别：中文]"
   module_name="假回锁"
   module_description="自动刷新bl相关分区到非活动槽位"
 else
-  ui_print "[English selected / 已选择英文]"
+  ui_print "[Auto-detected: English]"
   module_name="Fake BL EFISP"
   module_description="Automatically flash BL-related partitions to inactive slot"
 fi
@@ -56,20 +34,6 @@ sed -i "s|^name=.*|name=$module_name|" "$MODPATH/module.prop"
 sed -i "s|^description=.*|description=$module_description|" "$MODPATH/module.prop"
 
 if [ "$LANG" = "zh" ]; then
-  T_OPT_MENU="====================================="
-  T_OPT_ASK="是否启用额外修补功能(vendor_boot/super)?"
-  T_OPT_UP_YES="音量上 = 启用修补"
-  T_OPT_DOWN_SKIP="音量下 = 跳过修补"
-  T_OPT_CHOICE1="请选择修补类型"
-  T_OPT_VB="音量上：仅修补 vendor_boot"
-  T_OPT_SUPER="音量下：移除super分区验证"
-  T_OPT_RUN_VB="- 开始执行vendor_boot修补..."
-  T_OPT_RUN_SUPER="- 开始执行移除super验证..."
-  T_OPT_FINISH_VB="vendor_boot修补执行完成"
-  T_OPT_FINISH_SUPER="super验证移除执行完成！"
-  T_OPT_SUPER_NOTE="【重要提示】移除super验证已内置vendor_boot修补；操作后请勿修改 system、system_dlkm、vendor 分区！"
-  T_OPT_SKIP="已跳过额外修补步骤"
-  T_BIN_FAIL="执行失败！"
 
   T_VERIFY="- 正在验证设备型号"
   T_DEVICE_OK="- 设备验证完成："
@@ -110,20 +74,6 @@ if [ "$LANG" = "zh" ]; then
   T_SEL_NO="选择了否，正在安装OTA更新模块"
   T_DONE_NO="安装完成，请重启系统即可"
 else
-  T_OPT_MENU="====================================="
-  T_OPT_ASK="Enable extra patch functions?"
-  T_OPT_UP_YES="Vol+ = Enable patches"
-  T_OPT_DOWN_SKIP="Vol‑ = Skip patches"
-  T_OPT_CHOICE1="Select patch mode"
-  T_OPT_VB="Vol+ : Patch vendor_boot only"
-  T_OPT_SUPER="Vol‑ : Remove super partition verification"
-  T_OPT_RUN_VB="- Running vendor_boot patch binary..."
-  T_OPT_RUN_SUPER="- Running super verification remove binary..."
-  T_OPT_FINISH_VB="vendor_boot patch finished"
-  T_OPT_FINISH_SUPER="Super verification removal finished!"
-  T_OPT_SUPER_NOTE="【WARNING】Super patch includes vendor_boot patch. DO NOT modify system,system_dlkm,vendor partitions afterward!"
-  T_OPT_SKIP="Extra patch skipped"
-  T_BIN_FAIL="Binary execution failed!"
 
   T_VERIFY="- Verifying device model"
   T_DEVICE_OK="- Device verified:"
@@ -185,81 +135,17 @@ detect_current_slot() {
   esac
 }
 
-ui_print ""
-ui_print "$T_OPT_MENU"
-ui_print "$T_OPT_ASK"
-ui_print "$T_OPT_UP_YES"
-ui_print "$T_OPT_DOWN_SKIP"
-
-EXTRA_PATCH_MODE=""
-while true; do
-  keyevent=$(read_volume_key)
-  if [ "$keyevent" = "up" ]; then
-    ui_print "$T_OPT_CHOICE1"
-    ui_print "$T_OPT_VB"
-    ui_print "$T_OPT_SUPER"
-    while true; do
-      keyevent2=$(read_volume_key)
-      if [ "$keyevent2" = "up" ]; then
-        EXTRA_PATCH_MODE="vendor_boot"
-        break
-      elif [ "$keyevent2" = "down" ]; then
-        EXTRA_PATCH_MODE="super"
-        break
-      fi
-    done
-    break
-  elif [ "$keyevent" = "down" ]; then
-    EXTRA_PATCH_MODE="skip"
-    ui_print "$T_OPT_SKIP"
-    break
-  fi
-done
-
-current_slot_suffix=$(detect_current_slot)
-if [ -z "$current_slot_suffix" ]; then
-  ui_print "$T_NO_SLOT"
-  abort "slot detection failed"
-fi
-slot_letter=${current_slot_suffix#_}
-
-if [ "$EXTRA_PATCH_MODE" = "vendor_boot" ]; then
-  ui_print "$T_OPT_RUN_VB"
-  ui_print "- 当前槽位: $slot_letter"
-  if [ ! -x "$MODPATH/bin/patch_tools" ]; then
-    ui_print "$T_BIN_FAIL: patch_tools binary not found!"
-    abort "patch_tools missing"
-  fi
-  "$MODPATH/bin/patch_tools" patch_vendor "$slot_letter"
-  ret=$?
-  if [ "$ret" -ne 0 ]; then
-    ui_print "$T_BIN_FAIL (vendor_boot ret:$ret)"
-    abort "vendor_boot patch failed"
-  fi
-  ui_print "$T_OPT_FINISH_VB"
-elif [ "$EXTRA_PATCH_MODE" = "super" ]; then
-  ui_print "$T_OPT_RUN_SUPER"
-  ui_print "- 当前槽位: $slot_letter"
-  if [ ! -x "$MODPATH/bin/patch_tools" ]; then
-    ui_print "$T_BIN_FAIL: patch_tools binary not found!"
-    abort "patch_tools missing"
-  fi
-  "$MODPATH/bin/patch_tools" patch_vendor "$slot_letter" super
-  ret=$?
-  if [ "$ret" -ne 0 ]; then
-    ui_print "$T_BIN_FAIL (super ret:$ret)"
-    abort "super patch failed"
-  fi
-  ui_print "$T_OPT_FINISH_SUPER"
-  ui_print "$T_OPT_SUPER_NOTE"
-fi
-
 BY_NAME_DIR=/dev/block/by-name
 RUNTIME_DIR=$MODPATH/tmp
 PERSIST_MNT=/mnt/vendor/persist
 EFISP_DIR=$PERSIST_MNT/efisp
 ABLREPO_URL="https://raw.githubusercontent.com/superturtlee/gbl_root_canoe/main/ablrepo"
 mkdir -p "$RUNTIME_DIR"
+if [ "$LANG" = zh ]; then
+  ui_print "vendor_boot / super 修补请在安装完成后打开 WebUI 操作。"
+else
+  ui_print "Use WebUI after installation for vendor_boot / super patches."
+fi
 
 verify_sha256() {
   [ -f "$1" ] && [ -f "$2" ] || return 1
