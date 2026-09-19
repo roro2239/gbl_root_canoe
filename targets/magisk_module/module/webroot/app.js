@@ -1,4 +1,4 @@
-import { exec as ksuExec, moduleInfo as ksuModuleInfo, toast } from "./kernelsu.js";
+import { exec as ksuExec, moduleInfo as ksuModuleInfo, toast, fullScreen } from "./kernelsu.js";
 
 const IMAGE_NAMES = ["abl"];
 
@@ -18,19 +18,14 @@ const state = {
   activeTaskScope: "",
   activeTaskSlot: "",
   completionNotifiedTaskId: "",
-  lang: "zh"
+  lang: /^zh\b/i.test(navigator.language || "") ? "zh" : "en"
 };
 
 const i18n = {
   zh: {
     pageTitle: "假回锁 - BL Flasher",
-    ksuWebUI: "KernelSU Module WebUI",
-    heroDesc: "自动识别当前活动槽位，若新版本存在GBL漏洞则跳过BL刷写；将BL镜像刷写到另一槽位，并将破解ABL放入persist的efisp目录、BDS刷入efisp分区",
     slotStatus: "槽位状态",
     refresh: "刷新",
-    languageSwitch: "English",
-    languageChanged: "已切换为中文",
-    languageChangeFailed: "语言切换失败",
     currentSlot: "当前槽位",
     targetSlot: "目标槽位",
     imageCount: "镜像数量",
@@ -47,12 +42,13 @@ const i18n = {
     toastStartBdsTools: "BDS/Tools 更新任务已启动",
     toastBdsToolsDone: "BDS/Tools 更新任务运行成功",
     clearLog: "清空日志",
-    updateEfisp: "更新 efisp（默认开启）",
-    debugMode: "调试模式（仅处理不刷写，efisp 目录使用模块 tmp/efisp）",
+    updateEfisp: "更新 efisp",
+    debugMode: "调试模式",
+    debugHint: "刷写与分区修补仅处理、不写入；efisp 使用模块 tmp/efisp。BDS / Tools 更新不受此选项影响。",
     lblPatchVendorBoot: "修补 vendor_boot 分区",
     lblPatchSuper: "修补 super 分区",
-    patchMutualTip: "vendor_boot 和 super 仅可选择一项",
-    warning: "刷写对象是 bootloader 相关分区，风险较高。开始前请确认镜像与机型严格匹配。",
+    patchMutualTip: "两项互斥，可不选",
+    warning: "Bootloader 写入可能导致无法启动，请确认镜像与机型匹配。",
     imageMap: "镜像映射",
     partition: "分区名",
     source: "源分区 (当前槽位)",
@@ -60,13 +56,12 @@ const i18n = {
     action: "操作",
     waiting: "等待读取模块状态",
     log: "实时日志",
-    autoPoll: "自动轮询最近 200 行",
+    autoPoll: "最近 200 行 · 自动刷新",
     risk: "高风险操作",
     confirmFlash: "确认操作",
     cancel: "取消",
     continue: "继续",
     waitingStatus: "等待检测",
-    slotUnknown: "槽位未知",
     logWaiting: "等待日志输出...",
     toastRunning: "已有任务在运行",
     toastStartDebug: "调试任务已启动",
@@ -78,11 +73,10 @@ const i18n = {
     toastBlDone: "BL 刷写完成，但 efisp 未更新",
     toastFailed: "任务执行失败",
     toastStartError: "任务启动失败",
-    statusIdle: "状态: idle",
-    statusRunning: "状态: running",
-    statusSuccess: "状态: success",
-    statusWarning: "状态: warning",
-    statusError: "状态: error",
+    statusRunning: "运行中",
+    statusSuccess: "已完成",
+    statusWarning: "需注意",
+    statusError: "失败",
     toastLogBusy: "任务运行中，暂时不能清空日志",
     toastLogCleared: "日志已清空",
     modalStep1Debug: "调试模式：将执行所有处理流程但不刷写分区，生成的文件保存在 tmp 目录。",
@@ -101,13 +95,8 @@ const i18n = {
   },
   en: {
     pageTitle: "Fake Lock - BL Flasher",
-    ksuWebUI: "KernelSU Module WebUI",
-    heroDesc: "Auto-detect active slot. Skip BL flash if new build has GBL exploit. Flash BL images to inactive slot, place the cracked ABL in persist's efisp dir and flash the BDS to the efisp partition.",
     slotStatus: "Slot Status",
     refresh: "Refresh",
-    languageSwitch: "中文",
-    languageChanged: "Switched to English",
-    languageChangeFailed: "Language switch failed",
     currentSlot: "Current Slot",
     targetSlot: "Target Slot",
     imageCount: "Image Count",
@@ -124,11 +113,12 @@ const i18n = {
     toastStartBdsTools: "BDS/Tools update started",
     toastBdsToolsDone: "BDS/Tools update task succeeded",
     clearLog: "Clear Log",
-    updateEfisp: "Update efisp (on by default)",
-    debugMode: "Debug Mode (process only, no flash; efisp dir uses module tmp/efisp)",
+    updateEfisp: "Update efisp",
+    debugMode: "Debug mode",
+    debugHint: "Flash and patch: process without writing; efisp uses module tmp/efisp. BDS / Tools updates are not affected.",
     lblPatchVendorBoot: "Patch vendor_boot partition",
     lblPatchSuper: "Patch super partition",
-    patchMutualTip: "Only one of vendor_boot / super can be selected",
+    patchMutualTip: "Select at most one option",
     warning: "Flashing bootloader partitions is high risk. Verify images match your device before starting.",
     imageMap: "Image Mapping",
     partition: "Partition",
@@ -137,13 +127,12 @@ const i18n = {
     action: "Action",
     waiting: "Waiting for module status",
     log: "Live Log",
-    autoPoll: "Auto poll last 200 lines",
+    autoPoll: "Last 200 lines · Auto refresh",
     risk: "HIGH RISK",
     confirmFlash: "Confirm Action",
     cancel: "Cancel",
     continue: "Continue",
     waitingStatus: "Waiting",
-    slotUnknown: "Slot Unknown",
     logWaiting: "Waiting for log...",
     toastRunning: "Task is already running",
     toastStartDebug: "Debug task started",
@@ -154,11 +143,10 @@ const i18n = {
     toastPatchDone: "Partition patch task succeeded",
     toastBlDone: "BL flashed, but efisp not updated",
     toastFailed: "Task finished (failed)",
-    statusIdle: "Status: idle",
-    statusRunning: "Status: running",
-    statusSuccess: "Status: success",
-    statusWarning: "Status: warning",
-    statusError: "Status: error",
+    statusRunning: "Running",
+    statusSuccess: "Completed",
+    statusWarning: "Attention",
+    statusError: "Failed",
     toastStartError: "Failed to start task",
     toastLogBusy: "Cannot clear log while task is running",
     toastLogCleared: "Log cleared",
@@ -178,9 +166,24 @@ const i18n = {
   }
 };
 
+Object.assign(i18n.zh, {
+  patchPanel: "分区修补", otaPanel: "OTA 与启动维护",
+  patchIntro: "super 选项通过修改 vendor_boot 中的 fstab 移除验证，包含 vendor_boot 修补。",
+  lblPatchSuper: "移除 super 验证（包含 vendor_boot 修补）",
+  otaTip: "OTA 操作面向另一槽位；勾选的修补选项也应用到另一槽位。"
+});
+Object.assign(i18n.en, {
+  patchPanel: "Partition patches", otaPanel: "OTA & boot maintenance",
+  patchIntro: "The super option removes verification through the fstab in vendor_boot and includes the vendor_boot patch.",
+  lblPatchSuper: "Remove super verification (includes vendor_boot patch)",
+  otaTip: "OTA operations target the other slot, including selected patches."
+});
+
+let previousFocus = null;
+let connectionReady = false;
+
 const elements = {
   stateChip: document.getElementById("stateChip"),
-  slotChip: document.getElementById("slotChip"),
   currentSlot: document.getElementById("currentSlot"),
   targetSlot: document.getElementById("targetSlot"),
   imageCount: document.getElementById("imageCount"),
@@ -193,7 +196,6 @@ const elements = {
   patchPartButton: document.getElementById("patchPartButton"),
   clearLogButton: document.getElementById("clearLogButton"),
   refreshButton: document.getElementById("refreshButton"),
-  languageButton: document.getElementById("languageButton"),
   confirmModal: document.getElementById("confirmModal"),
   confirmText: document.getElementById("confirmText"),
   nextConfirmButton: document.getElementById("nextConfirmButton"),
@@ -217,10 +219,6 @@ function applyLanguage(lang) {
   const t = i18n[lang];
   document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
   elements.pageTitle.textContent = t.pageTitle;
-  elements.languageButton.textContent = t.languageSwitch;
-  elements.languageButton.setAttribute("aria-label", t.languageSwitch);
-  setText("#lblKsuWebUI", t.ksuWebUI);
-  setText(".hero-copy", t.heroDesc);
   setText("#lblSlotStatus", t.slotStatus);
   setText("#lblCurrentSlot", t.currentSlot);
   setText("#lblTargetSlot", t.targetSlot);
@@ -248,9 +246,7 @@ function applyLanguage(lang) {
   if (elements.stateChip.textContent === "等待检测" || elements.stateChip.textContent === "Waiting") {
     elements.stateChip.textContent = t.waitingStatus;
   }
-  if (elements.slotChip.textContent === "槽位未知" || elements.slotChip.textContent === "Slot Unknown") {
-    elements.slotChip.textContent = t.slotUnknown;
-  }
+  if (!state.status) elements.taskMessage.textContent = t.waitOperate;
   document.querySelectorAll("[data-i18n]").forEach(el => {
     const key = el.dataset.i18n;
     if (t[key]) el.textContent = t[key];
@@ -277,20 +273,6 @@ async function runScript(action, arg) {
   const { errno, stdout, stderr } = await Promise.race([ksuExec(command), timeout]);
   if (errno !== 0) throw new Error(stderr || `Command failed: ${errno}`);
   return stdout || "";
-}
-
-async function toggleLanguage() {
-  const nextLanguage = state.lang === "zh" ? "en" : "zh";
-  try {
-    await runScript("set-language", nextLanguage);
-    if (!elements.confirmModal.classList.contains("hidden")) closeConfirmModal();
-    applyLanguage(nextLanguage);
-    state.prevStatusRaw = null;
-    await refreshStatus();
-    toast(i18n[nextLanguage].languageChanged);
-  } catch (e) {
-    toast(`${i18n[state.lang].languageChangeFailed}: ${e.message}`);
-  }
 }
 
 function parseKeyValueOutput(output) {
@@ -359,7 +341,7 @@ function renderStatus(status) {
   const visibleState = run ? "running" : st;
   const msg = localizedTaskMessage(status);
   const statusLabels = {
-    idle: t.statusIdle,
+    idle: "",
     running: t.statusRunning,
     success: t.statusSuccess,
     warning: t.statusWarning,
@@ -370,16 +352,16 @@ function renderStatus(status) {
   elements.imageCount.textContent = IMAGE_NAMES.length;
   elements.taskMessage.textContent = msg;
   elements.updatedAt.textContent = status.UPDATED_AT || "-";
-  elements.stateChip.textContent = statusLabels[visibleState] || `${state.lang === "zh" ? "状态" : "Status"}: ${visibleState}`;
-  elements.stateChip.className = "chip";
+  elements.stateChip.textContent = statusLabels[visibleState] ?? `${state.lang === "zh" ? "状态" : "Status"}: ${visibleState}`;
+  elements.stateChip.className = visibleState === "idle" ? "chip hidden" : "chip";
   if (st === "success") elements.stateChip.classList.add("chip-success");
   else if (st === "error") elements.stateChip.classList.add("chip-danger");
   else if (st === "warning" || run) elements.stateChip.classList.add("chip-warn");
-  elements.slotChip.textContent = (cur !== "-" && tar !== "-") ? `${state.lang === "zh" ? "当前" : "Current"} ${cur} → ${state.lang === "zh" ? "目标" : "Target"} ${tar}` : t.slotUnknown;
   elements.flashButton.disabled = run || cur === "-" || tar === "-";
   elements.bdsToolsButton.disabled = run;
   elements.patchPartButton.disabled = run;
   elements.clearLogButton.disabled = run;
+  document.getElementById("moduleVersion").textContent = status.VERSION || (state.lang === "zh" ? "版本未知" : "Version unknown");
   renderTable(cur, tar);
 }
 function taskSlotSuffix() {
@@ -445,14 +427,23 @@ function applyStatus(s, notify = true) {
 async function refreshStatus() {
   try {
     const raw = await runScript("status");
-    if (!raw) return state.status;
+    if (!raw) throw new Error("Empty status response");
+    connectionReady = true;
     if (raw === state.prevStatusRaw) return state.status;
     state.prevStatusRaw = raw;
     const s = parseKeyValueOutput(raw);
-    if (s.USER_LANG === "en") applyLanguage("en");
-    else if (s.USER_LANG === "zh") applyLanguage("zh");
+    if (i18n[s.USER_LANG] && s.USER_LANG !== state.lang) {
+      if (!elements.confirmModal.classList.contains("hidden")) closeConfirmModal();
+      applyLanguage(s.USER_LANG);
+    }
     return applyStatus(s);
   } catch (e) {
+    connectionReady = false;
+    state.prevStatusRaw = null;
+    elements.stateChip.textContent = i18n[state.lang].statusReadFail;
+    elements.stateChip.className = "chip chip-danger";
+    elements.taskMessage.textContent = e.message;
+    [elements.flashButton, elements.bdsToolsButton, elements.patchPartButton].forEach(button => { button.disabled = true; });
     console.error("refreshStatus failed:", e);
     return state.status;
   }
@@ -478,6 +469,7 @@ function closeConfirmModal() {
   elements.confirmModal.classList.add("hidden");
   elements.confirmModal.setAttribute("aria-hidden", "true");
   elements.nextConfirmButton.textContent = i18n[state.lang].continue;
+  previousFocus?.focus();
 }
 
 function getPatchArgString() {
@@ -496,6 +488,8 @@ function getSelectedPatchName() {
 }
 
 function openConfirmModal(action) {
+  if (!connectionReady || state.status?.RUNNING === "1") return;
+  previousFocus = document.activeElement;
   const t = i18n[state.lang];
   state.pendingAction = action;
   state.confirmStep = 1;
@@ -531,6 +525,7 @@ function openConfirmModal(action) {
   }
   elements.confirmModal.classList.remove("hidden");
   elements.confirmModal.setAttribute("aria-hidden", "false");
+  elements.cancelConfirmButton.focus();
 }
 
 function handleConfirmProgress() {
@@ -694,9 +689,11 @@ function initPatchCheckboxMutual() {
 }
 
 async function init() {
+  applyLanguage(state.lang);
   try {
+    fullScreen(true);
     const info = moduleInfo();
-    if(!info) return;
+    if (!info?.moduleDir) throw new Error("KernelSU module information unavailable");
     state.moduleDir = info.moduleDir;
     state.scriptPath = `${state.moduleDir}/bin/bl_flasher.sh`;
     initPatchCheckboxMutual();
@@ -721,7 +718,6 @@ async function init() {
   }
 
   elements.refreshButton.addEventListener("click", manualRefresh);
-  elements.languageButton.addEventListener("click", toggleLanguage);
   elements.flashButton.addEventListener("click", () => openConfirmModal("flash"));
   elements.bdsToolsButton.addEventListener("click", () => openConfirmModal("bds-tools"));
   document.addEventListener("visibilitychange", () => {
@@ -734,6 +730,13 @@ async function init() {
   elements.cancelConfirmButton.addEventListener("click", closeConfirmModal);
   elements.nextConfirmButton.addEventListener("click", handleConfirmProgress);
   elements.confirmModal.addEventListener("click", e => e.target === elements.confirmModal && closeConfirmModal());
+  elements.confirmModal.addEventListener("keydown", e => {
+    if (e.key === "Escape") closeConfirmModal();
+    if (e.key === "Tab") {
+      e.preventDefault();
+      (document.activeElement === elements.cancelConfirmButton ? elements.nextConfirmButton : elements.cancelConfirmButton).focus();
+    }
+  });
 
   startPolling();
 }

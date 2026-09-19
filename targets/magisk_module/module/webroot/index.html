@@ -3,57 +3,52 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title id="pageTitle">假回锁 - BL Flasher</title>
+  <title id="pageTitle">假回锁 · BL Flasher</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 <div class="page-shell">
-  <header class="hero-card">
-    <div>
-      <p class="eyebrow" id="lblKsuWebUI">KernelSU Module WebUI</p>
-      <h1>BL Flasher</h1>
-      <p class="hero-copy" id="heroDesc">
-        自动识别当前活动槽位，若新版本存在GBL漏洞则跳过BL刷写；将BL镜像刷写到另一槽位，并将破解ABL放入persist的efisp目录、BDS刷入efisp分区
-      </p>
-    </div>
-    <div class="hero-meta">
-      <button class="ghost-button language-button" id="languageButton" type="button">English</button>
-      <span class="chip" id="stateChip">等待检测</span>
-      <span class="chip chip-warn" id="slotChip">槽位未知</span>
+  <header class="toolbar">
+    <div class="identity"><h1>BL Flasher</h1><span class="version" id="moduleVersion">—</span></div>
+    <div class="toolbar-actions">
+      <span class="chip" id="stateChip" role="status">等待检测</span>
+      <button class="ghost-button" id="refreshButton" type="button" data-i18n="refresh">刷新</button>
     </div>
   </header>
-
   <main class="grid-layout">
-    <section class="panel stats-panel">
-      <div class="panel-heading">
-        <h2 id="lblSlotStatus">槽位状态</h2>
-        <button class="ghost-button" id="refreshButton" type="button" data-i18n="refresh">刷新</button>
-      </div>
+    <section class="summary" aria-labelledby="lblSlotStatus">
+      <h2 class="sr-only" id="lblSlotStatus">槽位状态</h2>
+      <dl class="stats-grid">
+        <div><dt id="lblCurrentSlot">当前槽位</dt><dd id="currentSlot">—</dd></div>
+        <div><dt id="lblTargetSlot">目标槽位</dt><dd id="targetSlot">—</dd></div>
+        <div><dt id="lblImageCount">镜像数量</dt><dd id="imageCount">—</dd></div>
+        <div class="task-stat"><dt id="lblTaskStatus">任务状态</dt><dd id="taskMessage" role="status">等待操作</dd></div>
+      </dl>
+    </section>
+    <section class="panel patch-panel">
+      <div class="panel-heading"><h2 data-i18n="patchPanel">分区修补</h2></div>
+      <p class="caption" id="patchIntro" data-i18n="patchIntro">super 选项通过修改 vendor_boot 中的 fstab 移除验证，包含 vendor_boot 修补。</p>
+      <label class="option-check" for="patchVendorBootCheckbox">
+        <input id="patchVendorBootCheckbox" type="checkbox" aria-describedby="patchMutualTip" />
+        <span id="lblPatchVendorBoot">修补 vendor_boot 分区</span>
+      </label>
 
-      <div class="stats-grid">
-        <article class="stat-card">
-          <span class="stat-label" id="lblCurrentSlot">当前槽位</span>
-          <strong class="stat-value" id="currentSlot">-</strong>
-        </article>
-        <article class="stat-card accent-card">
-          <span class="stat-label" id="lblTargetSlot">目标槽位</span>
-          <strong class="stat-value" id="targetSlot">-</strong>
-        </article>
-        <article class="stat-card">
-          <span class="stat-label" id="lblImageCount">镜像数量</span>
-          <strong class="stat-value" id="imageCount">0</strong>
-        </article>
-        <article class="stat-card">
-          <span class="stat-label" id="lblTaskStatus">任务状态</span>
-          <strong class="stat-value stat-small" id="taskMessage">等待操作</strong>
-        </article>
-      </div>
+      <label class="option-check" for="patchSuperCheckbox">
+        <input id="patchSuperCheckbox" type="checkbox" aria-describedby="patchIntro patchMutualTip" />
+        <span id="lblPatchSuper">修补 super 分区</span>
+      </label>
 
+      <div class="action-strip"><button class="primary-button" id="patchPartButton" type="button" data-i18n="patchPart" disabled>修补当前槽位</button></div>
+      <p class="caption hint-text" id="patchMutualTip">vendor_boot 和 super 仅可选择一项</p>
+
+
+    </section>
+
+    <section class="panel ota-panel">
+      <div class="panel-heading"><h2 data-i18n="otaPanel">OTA 与启动维护</h2></div>
       <div class="action-strip">
-        <button class="primary-button" id="flashButton" type="button" data-i18n="flash">刷写到另一槽位</button>
-        <button class="ghost-button" id="bdsToolsButton" type="button" data-i18n="bdsTools">仅更新BDS和Tools</button>
-        <button class="ghost-button" id="patchPartButton" type="button" data-i18n="patchPart">修补分区</button>
-        <button class="ghost-button" id="clearLogButton" type="button" data-i18n="clearLog">清空日志</button>
+        <button class="primary-button" id="flashButton" type="button" disabled data-i18n="flash">刷写到另一槽位</button>
+        <button class="ghost-button" id="bdsToolsButton" type="button" disabled data-i18n="bdsTools">仅更新BDS和Tools</button>
       </div>
 
       <label class="option-check" for="updateEfispCheckbox">
@@ -61,41 +56,29 @@
         <span id="lblUpdateEfisp">更新 efisp（默认开启）</span>
       </label>
 
-      <label class="option-check" for="debugModeCheckbox">
-        <input id="debugModeCheckbox" type="checkbox" />
-        <span id="lblDebugMode">调试模式（仅处理不刷写，生成的文件保存在 tmp 目录）</span>
-      </label>
-
-      <label class="option-check" for="patchVendorBootCheckbox">
-        <input id="patchVendorBootCheckbox" type="checkbox" />
-        <span id="lblPatchVendorBoot">修补 vendor_boot 分区</span>
-      </label>
-
-      <label class="option-check" for="patchSuperCheckbox">
-        <input id="patchSuperCheckbox" type="checkbox" />
-        <span id="lblPatchSuper">修补 super 分区</span>
-      </label>
-
-      <p class="caption hint-text" id="patchMutualTip">vendor_boot 和 super 仅可选择一项</p>
-
-      <p class="warning-copy" id="lblWarning">
-        刷写对象是 bootloader 相关分区，风险较高。开始前请确认镜像与机型严格匹配。
-      </p>
+      <p class="caption" data-i18n="otaTip">OTA 操作面向另一槽位；勾选的修补选项也应用到另一槽位。</p>
     </section>
-
+    <aside class="operation-notes">
+      <label class="option-check" for="debugModeCheckbox">
+        <input id="debugModeCheckbox" type="checkbox" aria-describedby="debugHint" />
+        <span id="lblDebugMode">调试模式</span>
+      </label>
+      <p class="caption" id="debugHint" data-i18n="debugHint">刷写与分区修补仅处理、不写入；efisp 使用模块 tmp/efisp。BDS / Tools 更新不受此选项影响。</p>
+      <p class="warning-copy" id="lblWarning">Bootloader 写入可能导致无法启动，请确认镜像与机型匹配。</p>
+    </aside>
     <section class="panel map-panel">
       <div class="panel-heading">
         <h2 id="lblImageMap">镜像映射</h2>
-        <span class="caption" id="updatedAt">尚未检测</span>
+        <span class="caption" id="updatedAt">—</span>
       </div>
-      <div class="table-wrap">
+      <div class="table-wrap" tabindex="0" role="region" aria-labelledby="lblImageMap">
         <table>
           <thead>
             <tr>
-              <th id="tblPartition">分区名</th>
-              <th id="tblSource">源分区 (当前槽位)</th>
-              <th id="tblTarget">目标分区</th>
-              <th id="tblAction">操作</th>
+              <th scope="col" id="tblPartition">分区名</th>
+              <th scope="col" id="tblSource">源分区 (当前槽位)</th>
+              <th scope="col" id="tblTarget">目标分区</th>
+              <th scope="col" id="tblAction">操作</th>
             </tr>
           </thead>
           <tbody id="imageTableBody">
@@ -109,17 +92,17 @@
 
     <section class="panel log-panel">
       <div class="panel-heading">
-        <h2 id="lblLog">实时日志</h2>
-        <span class="caption" id="lblAutoPoll">自动轮询最近 200 行</span>
+        <div class="heading-group"><h2 id="lblLog">实时日志</h2><span class="caption" id="lblAutoPoll">最近 200 行 · 自动刷新</span></div>
+        <button class="ghost-button" id="clearLogButton" type="button" data-i18n="clearLog">清空日志</button>
       </div>
-      <pre id="logOutput">等待日志输出...</pre>
+      <pre id="logOutput" tabindex="0" aria-labelledby="lblLog">等待日志输出...</pre>
     </section>
   </main>
 </div>
 
 <div class="modal-backdrop hidden" id="confirmModal" aria-hidden="true">
-  <div class="modal-card" role="dialog" aria-modal="true">
-    <p class="eyebrow" id="modalRisk">高风险操作</p>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-describedby="confirmText">
+    <p class="risk-label" id="modalRisk">高风险操作</p>
     <h2 id="modalTitle">确认刷写</h2>
     <p id="confirmText">即将开始刷写，请确认操作对象和槽位。</p>
     <div class="modal-actions">

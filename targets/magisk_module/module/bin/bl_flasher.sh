@@ -11,17 +11,11 @@ export MODPATH=$MODDIR
 export BINDIR=$MODDIR/bin
 export KSU_MODULE=${KSU_MODULE:-fake_bl_efisp}
 
-USER_LANG=$(ksud module config get user_lang 2>/dev/null)
-case "$USER_LANG" in
-  zh|en) LANG=$USER_LANG ;;
-  *)
-    SYSTEM_LOCALE=$(getprop persist.sys.locale 2>/dev/null)
-    [ -n "$SYSTEM_LOCALE" ] || SYSTEM_LOCALE=$(getprop ro.product.locale 2>/dev/null)
-    case "$SYSTEM_LOCALE" in
-      zh*) LANG=zh ;;
-      *) LANG=en ;;
-    esac
-    ;;
+SYSTEM_LOCALE=$(getprop persist.sys.locale 2>/dev/null)
+[ -n "$SYSTEM_LOCALE" ] || SYSTEM_LOCALE=$(getprop ro.product.locale 2>/dev/null)
+case "$SYSTEM_LOCALE" in
+  zh*|ZH*) LANG=zh ;;
+  *) LANG=en ;;
 esac
 
 if [ "$LANG" = "zh" ]; then
@@ -415,7 +409,8 @@ print_status() {
   _task=$(read_line "$TASK_FILE")
 
   out="CURRENT_SLOT=$current_slot|TARGET_SLOT=$target_slot|RUNNING=$running|PID=$pid|STATE=$_state|MESSAGE=$_msg|UPDATED_AT=$_upd|TASK_ID=$_task|USER_LANG=$LANG"
-  emit "$out"
+  version=$(sed -n 's/^version=//p' "$MODDIR/module.prop")
+  emit "$out|VERSION=$version"
 }
 
 exec_patch_by_args() {

@@ -27,3 +27,7 @@ export function toast(message) {
 export function moduleInfo() {
   return ksu.moduleInfo();
 }
+
+export function fullScreen(enabled) {
+  ksu.fullScreen(enabled);
+}
