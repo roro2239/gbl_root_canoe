@@ -55,6 +55,9 @@ typedef enum {
   StrBootAndroidRealState,
   StrBootAndroidBackup,
   StrAndroidTools,
+  StrRebootTools,
+  StrBlTools,
+  StrArbTools,
   StrCount
 } SFB_STR_ID;
 

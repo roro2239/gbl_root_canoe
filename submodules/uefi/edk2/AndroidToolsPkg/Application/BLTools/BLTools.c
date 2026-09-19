@@ -116,8 +116,8 @@ BlConfirm (
   gST->ConIn->Reset (gST->ConIn, FALSE);
 
   AtUiBeginScreen (Title, NULL);
-  Print (L"%s\r\n", (Warning != NULL) ? Warning : L"");
-  Print (L"\r\nPower = confirm   Vol+/- = cancel\r\n");
+  AtUiPrint (L"%s\r\n", (Warning != NULL) ? Warning : L"");
+  AtUiPrint (L"Power = confirm   Vol+/- = cancel");
 
   Key = AtUiWaitForKey (0);
   if (Key != AtKeySelect) {
@@ -165,8 +165,8 @@ BlApply (
   }
 
   UnicodeSPrint (Warning, sizeof (Warning),
-                 L"%s - writes DeviceInfo. May cause data loss.",
-                 Action);
+                 AtUiText (L"%s - writes DeviceInfo. May cause data loss."),
+                 AtUiText (Action));
   if (!BlConfirm (Action, Warning)) {
     return;
   }
@@ -276,9 +276,9 @@ BlToolsEntry (
   while (TRUE) {
     /* The live state rides in the title bar so the action labels never
      * contradict what is actually persisted. */
-    UnicodeSPrint (Title, sizeof (Title), L"BL Tools  Unlock:%s  Crit:%s",
-                   Info.is_unlocked ? L"on" : L"off",
-                   Info.is_unlock_critical ? L"on" : L"off");
+    UnicodeSPrint (Title, sizeof (Title), AtUiText (L"BL Tools  Unlock:%s  Crit:%s"),
+                   Info.is_unlocked ? AtUiText (L"on") : AtUiText (L"off"),
+                   Info.is_unlock_critical ? AtUiText (L"on") : AtUiText (L"off"));
     UnicodeSPrint (LabelUnlock, sizeof (LabelUnlock),
                    Info.is_unlocked ? L"Lock Device" : L"Unlock Device");
     UnicodeSPrint (LabelCritical, sizeof (LabelCritical),

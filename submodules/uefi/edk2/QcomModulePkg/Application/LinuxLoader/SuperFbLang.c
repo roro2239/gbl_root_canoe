@@ -56,6 +56,9 @@ STATIC CONST SFB_LANG_STRING mSfbStrings[StrCount] = {
   { L"Android (Real State)", L"启动安卓（真实状态）" },
   { L"Android backup", L"启动安卓（备份）" },
   { L"Android Tools", L"安卓工具" },
+  { L"Reboot Tools", L"重启工具" },
+  { L"BL Tools", L"BL 锁状态工具" },
+  { L"ARB Tools", L"防回滚工具" },
 };
 
 CONST CHAR16 *

@@ -78,6 +78,7 @@ found at
  *  IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "AndroidToolsUi.h"
 #include <Uefi.h>
 #include <Library/DebugLib.h>
 #include <Library/Debug.h>
@@ -414,10 +415,6 @@ STATIC CONST CHAR16 *mFbActionRow[FB_ACTION_ROWS] = {
 };
 STATIC UINTN mFbActionCursor = 0;
 
-#define FB_ATTR_NORMAL    EFI_TEXT_ATTR (EFI_LIGHTGRAY, EFI_BLACK)
-#define FB_ATTR_SELECTED  EFI_TEXT_ATTR (EFI_BLACK, EFI_LIGHTGRAY)
-#define FB_ATTR_TITLE     EFI_TEXT_ATTR (EFI_WHITE, EFI_BLACK)
-
 typedef enum {
   FbActionNone = 0,
   FbActionPowerOff,
@@ -430,36 +427,18 @@ FastbootDrawModeScreen (VOID)
 {
   UINTN  Index;
 
-  gST->ConOut->SetAttribute (gST->ConOut, FB_ATTR_TITLE);
-  gST->ConOut->ClearScreen (gST->ConOut);
-  gST->ConOut->EnableCursor (gST->ConOut, FALSE);
-
-  Print (L"FASTBOOT MODE\r\n\r\n");
-
+  AtUiBeginScreen (L"FASTBOOT MODE", NULL);
   for (Index = 0; Index < FB_ACTION_ROWS; Index++) {
-    gST->ConOut->SetAttribute (gST->ConOut,
-                               (Index == mFbActionCursor) ? FB_ATTR_SELECTED
-                                                           : FB_ATTR_NORMAL);
-    Print (L"%s %s\r\n",
-           (Index == mFbActionCursor) ? L">" : L" ",
-           mFbActionRow[Index]);
+    AtUiDrawRow (Index == mFbActionCursor, L" ", mFbActionRow[Index]);
   }
-
-  gST->ConOut->SetAttribute (gST->ConOut, FB_ATTR_NORMAL);
-  Print (L"\r\nVol Up/Down: move   Power: select\r\n");
+  AtUiEndScreen (L"Vol Up/Down: move   Power: select");
 }
 
 STATIC
 VOID
 FastbootShowActionScreen (IN CONST CHAR16 *Text)
 {
-  gST->ConOut->SetAttribute (gST->ConOut, FB_ATTR_TITLE);
-  gST->ConOut->ClearScreen (gST->ConOut);
-  gST->ConOut->EnableCursor (gST->ConOut, FALSE);
-
-  Print (L"%s\r\n", Text);
-
-  gST->ConOut->SetAttribute (gST->ConOut, FB_ATTR_NORMAL);
+  AtUiShowMessage (Text);
 }
 
 /*

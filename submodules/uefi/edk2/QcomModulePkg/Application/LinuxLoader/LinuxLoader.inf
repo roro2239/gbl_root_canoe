@@ -78,10 +78,7 @@
 	SuperFbBrowser.c
 	SuperFbLang.c
 	SuperFbLang.h
-	SuperFbFont.c
 	SuperFbFont.h
-	SuperFbFontData.c
-	SuperFbGfx.c
 	SuperFbGfx.h
 
 [Packages]
@@ -94,6 +91,7 @@
 	FatPkg/FatPkg.dec
 
 [LibraryClasses]
+  SuperFbGraphics
 	DxeServicesTableLib
 	UefiLib
 	UefiApplicationEntryPoint

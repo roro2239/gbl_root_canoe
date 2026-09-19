@@ -1,0 +1,23 @@
+# 黑白 GOP 绘图与中文字库，供启动菜单和独立工具共用。
+# SPDX-License-Identifier: BSD-3-Clause
+[Defines]
+  INF_VERSION = 0x00010006
+  BASE_NAME = SuperFbGraphics
+  FILE_GUID = 5CF27176-36E9-4681-AF66-872ED068F8BA
+  MODULE_TYPE = BASE
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = SuperFbGraphics
+[Sources]
+  SuperFbGfx.c
+  SuperFbFont.c
+  SuperFbFontData.c
+[Packages]
+  MdePkg/MdePkg.dec
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  MemoryAllocationLib
+  UefiBootServicesTableLib
+[Protocols]
+  gEfiGraphicsOutputProtocolGuid

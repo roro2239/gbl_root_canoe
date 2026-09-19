@@ -15,12 +15,14 @@
 
 [Sources]
   AndroidToolsUi.c
+  AndroidToolsLang.c
 
 [Packages]
   MdePkg/MdePkg.dec
   AndroidToolsPkg/AndroidToolsPkg.dec
 
 [LibraryClasses]
+  SuperFbGraphics
   BaseLib
   BaseMemoryLib
   DebugLib

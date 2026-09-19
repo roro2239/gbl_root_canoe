@@ -1,5 +1,5 @@
 /** @file
- *  Console menu UI for AndroidToolsPkg, ported from the super-fastboot boot
+ *  Graphical/console menu UI for AndroidToolsPkg, ported from the super-fastboot boot
  *  menu (SuperFbMenu.c). Volume up/down move the cursor, power confirms.
  *
  *  Copyright (c) 2026, contributors to the canoe ABL tree.
@@ -18,6 +18,7 @@
 #include <Protocol/SimpleTextOut.h>
 
 #include "AndroidToolsUi.h"
+#include "../../../QcomModulePkg/Application/LinuxLoader/SuperFbGfx.h"
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(a)  (sizeof (a) / sizeof ((a)[0]))
@@ -117,11 +118,7 @@ AtUiEnterMenu (
   IN CONST CHAR16 *Title
   )
 {
-  gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_TITLE);
-  gST->ConOut->ClearScreen (gST->ConOut);
-  gST->ConOut->EnableCursor (gST->ConOut, FALSE);
-  Print (L"Entering %s\r\n", (Title != NULL) ? Title : L"Menu");
-  gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_NORMAL);
+  AtUiBeginScreen (Title, NULL);
 
   /* Wait for the launching key to be released... */
   gBS->Stall (AT_ENTER_MENU_DELAY_S * 1000 * 1000);
@@ -133,47 +130,103 @@ AtUiEnterMenu (
 
 /* ---- drawing ------------------------------------------------------------ */
 
-VOID
-AtUiBeginScreen (
-  IN CONST CHAR16 *Title,
-  IN CONST CHAR16 *Subtitle
-  )
+STATIC UINT32 mAtY;
+STATIC BOOLEAN mAtGfxTried;
+
+STATIC VOID
+AtUiDrawText (IN CONST CHAR16 *Text, IN BOOLEAN Selected)
 {
-  gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_TITLE);
-  gST->ConOut->ClearScreen (gST->ConOut);
-  gST->ConOut->EnableCursor (gST->ConOut, FALSE);
-  Print (L"%s\r\n", Title);
-  gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_NORMAL);
-  if (Subtitle != NULL) {
-    Print (L"%s\r\n", Subtitle);
+  CHAR16 Line[512];
+  UINTN Index = 0;
+  UINT32 Width, Height, Used = 0;
+  UINT32 Fg = Selected ? SFB_COLOR_SEL_FG : SFB_COLOR_TEXT;
+  UINT32 Bg = Selected ? SFB_COLOR_SEL_BG : SFB_COLOR_BG;
+
+  SfbGfxGetScreen (&Width, &Height);
+  while (*Text != L'\0') {
+    UINT8 GlyphWidth, Advance = 26;
+    UINT32 Offset;
+    if (*Text == L'\r') { Text++; continue; }
+    SfbFontGetGlyph (*Text, &Offset, &GlyphWidth, &Advance);
+    if (*Text == L'\n' || Used + Advance > Width - 48 || Index == 511) {
+      Line[Index] = L'\0';
+      SfbGfxFillRect (0, mAtY, Width, 40, Bg);
+      SfbGfxDrawText (Line, 24, mAtY + 4, Fg, Bg);
+      mAtY += 40;
+      Index = 0;
+      Used = 0;
+      if (*Text == L'\n') Text++;
+    } else {
+      Line[Index++] = *Text++;
+      Used += Advance;
+    }
   }
-  Print (L"\r\n");
+  if (Index != 0) {
+    Line[Index] = L'\0';
+    SfbGfxFillRect (0, mAtY, Width, 40, Bg);
+    SfbGfxDrawText (Line, 24, mAtY + 4, Fg, Bg);
+    mAtY += 40;
+  }
+}
+
+VOID EFIAPI
+AtUiPrint (IN CONST CHAR16 *Format, ...)
+{
+  CHAR16 Text[512];
+  VA_LIST Args;
+  VA_START (Args, Format);
+  UnicodeVSPrint (Text, sizeof (Text), AtUiText (Format), Args);
+  VA_END (Args);
+  if (SfbGfxActive ()) {
+    AtUiDrawText (Text, FALSE);
+  } else {
+    Print (L"%s\r\n", Text);
+  }
 }
 
 VOID
-AtUiEndScreen (
-  IN CONST CHAR16 *Footer
-  )
+AtUiBeginScreen (IN CONST CHAR16 *Title, IN CONST CHAR16 *Subtitle)
 {
-  gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_NORMAL);
-  if (Footer != NULL) {
-    Print (L"\r\n%s\r\n", Footer);
+  if (!mAtGfxTried) {
+    mAtGfxTried = TRUE;
+    SfbGfxInit ();
   }
+  if (SfbGfxActive ()) {
+    SfbGfxClear (SFB_COLOR_BG);
+    mAtY = 24;
+  } else {
+    gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_TITLE);
+    gST->ConOut->ClearScreen (gST->ConOut);
+    gST->ConOut->EnableCursor (gST->ConOut, FALSE);
+    Print (L"Graphics unavailable; using English console.\r\n");
+  }
+  AtUiPrint (L"%s", AtUiText (Title));
+  if (Subtitle != NULL) AtUiPrint (L"%s", AtUiText (Subtitle));
+  mAtY += 16;
+  gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_NORMAL);
 }
 
 VOID
-AtUiDrawRow (
-  IN BOOLEAN       Selected,
-  IN CONST CHAR16 *Marker,
-  IN CONST CHAR16 *Text
-  )
+AtUiEndScreen (IN CONST CHAR16 *Footer)
 {
-  gST->ConOut->SetAttribute (gST->ConOut,
-                             Selected ? AT_ATTR_SELECTED : AT_ATTR_NORMAL);
-  Print (L"%s %s %s", Selected ? L">" : L" ",
-         (Marker != NULL) ? Marker : L" ", (Text != NULL) ? Text : L"");
-  gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_NORMAL);
-  Print (L"\r\n");
+  mAtY += 12;
+  if (Footer != NULL) AtUiPrint (L"%s", AtUiText (Footer));
+}
+
+VOID
+AtUiDrawRow (IN BOOLEAN Selected, IN CONST CHAR16 *Marker, IN CONST CHAR16 *Text)
+{
+  CHAR16 Row[512];
+  UnicodeSPrint (Row, sizeof (Row), L"%s %s %s", Selected ? L">" : L" ",
+                 Marker != NULL ? Marker : L" ", AtUiText (Text));
+  if (SfbGfxActive ()) {
+    AtUiDrawText (Row, Selected);
+  } else {
+    gST->ConOut->SetAttribute (gST->ConOut,
+                               Selected ? AT_ATTR_SELECTED : AT_ATTR_NORMAL);
+    Print (L"%s\r\n", Row);
+    gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_NORMAL);
+  }
 }
 
 UINTN
@@ -218,11 +271,7 @@ AtUiShowMessage (
   IN CONST CHAR16 *Text
   )
 {
-  gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_TITLE);
-  gST->ConOut->ClearScreen (gST->ConOut);
-  gST->ConOut->EnableCursor (gST->ConOut, FALSE);
-  Print (L"\r\n\r\n  %s\r\n", (Text != NULL) ? Text : L"");
-  gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_NORMAL);
+  AtUiBeginScreen (Text, NULL);
 }
 
 VOID
@@ -231,9 +280,9 @@ AtUiReportStatus (
   IN EFI_STATUS    Status
   )
 {
-  gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_NORMAL);
-  Print (L"\r\n%s: %r\r\n", (What != NULL) ? What : L"", Status);
-  Print (L"Press power to continue.\r\n");
+  AtUiBeginScreen (What, NULL);
+  AtUiPrint (L"%r (0x%lx)", Status, (UINT64)Status);
+  AtUiEndScreen (L"Press power to continue.");
   AtUiWaitForKey (0);
 }
 
@@ -263,6 +312,17 @@ AtUiRunMenu (
 
   while (TRUE) {
     AtUiBeginScreen (Title, NULL);
+    if (SfbGfxActive ()) {
+      UINT32 Width, Height;
+      UINTN MaxRows = 1;
+      SfbGfxGetScreen (&Width, &Height);
+      /* 为最长项目及两行按键提示预留空间，480 像素屏幕也可滚动。 */
+      for (Index = 0; Index < Count; Index++) {
+        UINTN Rows = (SfbGfxTextWidth (AtUiText (Items[Index])) + 64) / (Width - 48) + 1;
+        if (Rows > MaxRows) MaxRows = Rows;
+      }
+      Visible = MIN (Count, MAX (1, (Height - mAtY - 104) / (MaxRows * 40)));
+    }
 
     Start = AtUiWindowStart (Cursor, Count, Visible);
     for (Index = Start; Index < Start + Visible && Index < Count; Index++) {

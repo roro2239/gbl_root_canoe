@@ -26,11 +26,11 @@
 pwsh -NoProfile -File tools/gen_sfb_font/gen_sfb_font.ps1 -FontFile "字体所在目录/NotoSansCJKsc-Regular.otf"
 ```
 
-脚本读取 `SuperFbLang.c` 的文案并生成 UTF-8 无 BOM 的 `SuperFbFontData.c`，包含 ASCII 可打印字符及菜单使用的汉字。修改中文文案后必须重新生成。常规 EFI 构建直接编译生成的 C 文件，不需要安装字体。
+脚本读取 `SuperFbLang.c` 和 `AndroidToolsLang.c` 的文案并生成 UTF-8 无 BOM 的 `SuperFbFontData.c`，包含 ASCII 可打印字符及菜单使用的汉字。修改中文文案后必须重新生成。常规 EFI 构建直接编译生成的 C 文件，不需要安装字体。
 
 ## 显示边界
 
-具备可用 GOP 且分辨率至少为 480×480 时，现有菜单及提示默认显示中文；无可用图形输出时明确提示初始化失败并使用英文控制台。自定义启动项名称和文件名按原有逻辑处理，未扩展 `BOOTENTRIES` 的 ASCII 格式；字库以外字符显示空心方框。独立启动的其他 EFI 应用使用各自界面。
+具备可用 GOP 且分辨率至少为 480×480 时，现有菜单及提示默认显示中文；无可用图形输出时明确提示初始化失败并使用英文控制台。自定义启动项名称和文件名按原有逻辑处理，未扩展 `BOOTENTRIES` 的 ASCII 格式；字库以外字符显示空心方框。内置 Fastboot 与 RebootTools、BLTools、ArbTools 也复用上述绘图和字库，包含中文菜单、状态与确认警告；其他 EFI 应用仍使用各自界面。
 
 ## 真实状态透传与 OPlus fastboot 补丁
 

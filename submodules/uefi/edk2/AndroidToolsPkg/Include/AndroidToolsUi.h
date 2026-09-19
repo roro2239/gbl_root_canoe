@@ -1,5 +1,5 @@
 /** @file
- *  Console menu UI for AndroidToolsPkg, modeled on the super-fastboot boot
+ *  Graphical/console menu UI for AndroidToolsPkg, modeled on the super-fastboot boot
  *  menu (SuperFbMenu). Three keys drive everything: volume up and volume down
  *  move the cursor, and power confirms.
  *
@@ -11,6 +11,9 @@
 #define __ANDROID_TOOLS_UI_H__
 
 #include <Uefi.h>
+
+CONST CHAR16 *AtUiText (IN CONST CHAR16 *Text);
+VOID EFIAPI AtUiPrint (IN CONST CHAR16 *Format, ...);
 
 typedef enum {
   AtKeyTimeout = 0,

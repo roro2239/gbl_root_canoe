@@ -111,3 +111,9 @@
 手动调用：`patch_abl 输入.efi 输出.efi normal` 或 `patch_abl 输入.efi 输出.efi fake_locked`；省略模式保持旧版假回锁行为。必须使用从原始 ABL 提取的 loader，不能用已假回锁产物生成真实状态模式。两种模式共享 GBL 与适用的去黄字补丁，但不共享假回锁状态修改。
 
 真实状态透传不保证 locked/green；假回锁不等于真实回锁；fastboot 分支绕过不代表解除所有命令权限或保证 fastbootd 可用。来源、许可证与适用边界见 [第三方来源声明](THIRD_PARTY_NOTICES.md)。
+
+### 二级菜单汉化
+
+Fastboot 的关机/重启菜单与重启工具、BL 锁状态工具、防回滚工具现使用同一黑白中文界面，涵盖按键提示、状态、错误和操作确认。BL 写入前确认、ARB 五次确认及取消行为保持不变。无可用 GOP 时明确提示并保留英文控制台。
+
+升级这部分界面需要同时更新 `BDS.efi` 与 `efisp/tools/` 下的三个 EFI 工具；只更新 BDS 不会改变旧工具的界面。

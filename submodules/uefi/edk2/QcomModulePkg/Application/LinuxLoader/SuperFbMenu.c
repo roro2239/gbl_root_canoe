@@ -346,6 +346,15 @@ SfbBootDisplayName (IN CONST CHAR16 *Name, IN CONST CHAR16 *FilePath)
         SfbStrCaseEqual (FileName, L"boot_backup.efi")) {
       return SfbStr (StrBootAndroidBackup);
     }
+    if (StrCmp (Name, L"Reboot Tools") == 0 && SfbStrCaseEqual (FileName, L"RebootTools.efi")) {
+      return SfbStr (StrRebootTools);
+    }
+    if (StrCmp (Name, L"BL Tools") == 0 && SfbStrCaseEqual (FileName, L"BLTools.efi")) {
+      return SfbStr (StrBlTools);
+    }
+    if (StrCmp (Name, L"ARB Tools") == 0 && SfbStrCaseEqual (FileName, L"ArbTools.efi")) {
+      return SfbStr (StrArbTools);
+    }
     if (StrCmp (Name, L"Android Tools") == 0 &&
         SfbStrCaseEqual (FileName, L"ENTRIES")) {
       return SfbStr (StrAndroidTools);

@@ -1,4 +1,4 @@
-# Generates SuperFbFontData.c from the UI strings in SuperFbLang.c.
+# Generates SuperFbFontData.c from SuperFbLang.c and AndroidToolsLang.c.
 #
 # Renders every unique character used by the BDS UI with the configured font
 # (a TTF/OTF via -FontFile, or the installed $FontName fallback) at 2x
@@ -72,6 +72,8 @@ Write-Host ("字体家族： {0}" -f $FontFamily.Name)
 
 # ---- collect characters: ASCII range + everything used in L"..." literals --
 $text = [System.IO.File]::ReadAllText($SrcFile, [System.Text.Encoding]::UTF8)
+$ToolStrings = Join-Path $RepoRoot 'submodules\uefi\edk2\AndroidToolsPkg\Library\AndroidToolsUi\AndroidToolsLang.c'
+$text += [System.IO.File]::ReadAllText($ToolStrings, [System.Text.Encoding]::UTF8)
 $matches = [regex]::Matches($text, 'L"((?:[^"\\]|\\.)*)"')
 if ($matches.Count -eq 0) {
     Write-Error 'SuperFbLang.c 中未找到宽字符串文案'

@@ -1,9 +1,8 @@
 #/** @file
 #  AndroidToolsPkg platform description. Builds the standalone RebootTools,
 #  ArbTools and BLTools UEFI applications plus the shared AndroidToolsUi menu
-#  library. The package is self-contained: it ports the r32 DeviceInfo and
-#  reboot/recovery code it needs and only relies on the standard EDK2 base
-#  classes, so it does not depend on the stripped QcomModulePkg build config.
+#  library. DeviceInfo and reboot/recovery helpers are local to the package;
+#  graphical menus share the boot menu renderer and font through SuperFbGraphics.
 #
 #  Build with, for example:
 #    build -p AndroidToolsPkg/AndroidToolsPkg.dsc -a AARCH64 -b RELEASE
@@ -33,6 +32,7 @@
 #
 ################################################################################
 [LibraryClasses]
+  SuperFbGraphics|QcomModulePkg/Application/LinuxLoader/SuperFbGraphics.inf
   UefiApplicationEntryPoint|MdePkg/Library/UefiApplicationEntryPoint/UefiApplicationEntryPoint.inf
   UefiBootServicesTableLib|MdePkg/Library/UefiBootServicesTableLib/UefiBootServicesTableLib.inf
   UefiRuntimeServicesTableLib|MdePkg/Library/UefiRuntimeServicesTableLib/UefiRuntimeServicesTableLib.inf
