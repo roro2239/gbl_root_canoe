@@ -55,6 +55,7 @@ STATIC CONST struct { CONST CHAR16 *En; CONST CHAR16 *Zh; } mStrings[] = {
   { L"Reset ARB Value", L"重置防回滚值" },
   { L"WARNING: this writes to the TEE and may lose keys.", L"警告：将写入 TEE，可能丢失密钥。" },
   { L"Confirm %u/5", L"确认 %u/5" },
+  { L"Confirm %u/3", L"确认 %u/3" },
   { L"Power = confirm   Vol+/- = cancel", L"电源键：确认  音量键：取消" },
   { L"Press power to continue.", L"按电源键继续。" },
 };

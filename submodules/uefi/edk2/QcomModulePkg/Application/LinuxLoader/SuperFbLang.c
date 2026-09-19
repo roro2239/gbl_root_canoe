@@ -59,6 +59,10 @@ STATIC CONST SFB_LANG_STRING mSfbStrings[StrCount] = {
   { L"Reboot Tools", L"重启工具" },
   { L"BL Tools", L"BL 锁状态工具" },
   { L"ARB Tools", L"防回滚工具" },
+  { L"Boot Modes", L"启动方式" },
+  { L"Confirm boot mode", L"确认启动方式" },
+  { L"Confirm %u/3", L"确认 %u/3" },
+  { L"Power: confirm   Volume: cancel", L"电源键：确认  音量键：取消" },
 };
 
 CONST CHAR16 *

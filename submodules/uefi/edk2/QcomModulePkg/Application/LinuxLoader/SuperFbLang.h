@@ -58,6 +58,10 @@ typedef enum {
   StrRebootTools,
   StrBlTools,
   StrArbTools,
+  StrBootModes,
+  StrConfirmBootMode,
+  StrConfirmThree,
+  StrConfirmOrCancel,
   StrCount
 } SFB_STR_ID;
 

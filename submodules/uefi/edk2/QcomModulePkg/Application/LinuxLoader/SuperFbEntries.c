@@ -521,6 +521,25 @@ SfbJoinRoot (IN CONST CHAR16 *RootPrefix,
   StrnCatS (Out, OutChars, Suffix, OutChars - StrLen (Out) - 1);
 }
 
+BOOLEAN
+SfbIsBootModeEntry (IN CONST SFB_BOOT_ENTRY *Entry)
+{
+  STATIC CONST CHAR16 *Paths[] = { L"\\boot.efi", L"\\boot_normal.efi", L"\\boot_backup.efi" };
+  CHAR16 Path[SFB_PATH_CHARS];
+  UINTN Index;
+
+  if (Entry->Kind != SfbEntryEfiFile || Entry->Volume == NULL) {
+    return FALSE;
+  }
+  for (Index = 0; Index < ARRAY_SIZE (Paths); Index++) {
+    SfbJoinRoot (SfbVolumeRootPrefix (Entry->Volume), Paths[Index], Path, SFB_PATH_CHARS);
+    if (StrCmp (Path, Entry->Path) == 0) {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
 /*
  * Read the ENTRIES file at EntriesPath (an absolute volume path) on Volume and
  * add one menu entry for each line that names a file present on the volume. A
@@ -838,6 +857,7 @@ SfbBuildSubMenu (OUT SFB_MENU_STATE *Menu,
   /* Always offer a way out: an empty or unreadable file still leaves the user
    * on a screen with a Back row. */
   SfbAppendBuiltIn (Menu, SfbEntryBack, L"Back");
+  SfbResolveDefault (Menu);
   return EFI_SUCCESS;
 }
 
@@ -1056,6 +1076,11 @@ SfbLaunchEntry (IN CONST SFB_BOOT_ENTRY *Entry,
     return EFI_INVALID_PARAMETER;
   }
 
+  /* 自动启动不弹窗；手动启动必须在保存默认项和加载驱动前完成确认。 */
+  if (ClearScreen && SfbIsBootModeEntry (Entry) && !SfbConfirmBootMode (Entry)) {
+    return EFI_ABORTED;
+  }
+
   /*
    * Announce the launch: "Booting <name>". Clearing the screen first is only
    * done for a menu-driven launch; an unattended default boot leaves the screen
@@ -1070,7 +1095,11 @@ SfbLaunchEntry (IN CONST SFB_BOOT_ENTRY *Entry,
    * default untouched.
    */
   if (!Temporary && !Entry->NoDefault) {
-    SfbSaveDefaultEntry (Entry);
+    Status = SfbSaveDefaultEntry (Entry);
+    if (EFI_ERROR (Status)) {
+      DEBUG ((EFI_D_ERROR, "SFB: saving default entry failed: %r\n", Status));
+      return Status;
+    }
   }
 
   /*
@@ -1107,6 +1136,7 @@ SfbLaunchDefaultEntry (VOID)
 {
   SFB_MENU_STATE  Menu;
   BOOLEAN         HasDefault;
+  UINTN           Index;
 
   SfbBuildMenu (&Menu);
 
@@ -1123,6 +1153,39 @@ SfbLaunchDefaultEntry (VOID)
      * caller then drops into the menu. Unattended boot: do not clear the
      * screen when announcing "Booting <name>". */
     SfbLaunchEntry (&Menu.Entry[Menu.DefaultIndex], FALSE, FALSE);
+  }
+
+  /* 启动方式移入二级菜单后，旧的卷/路径默认记录仍能按原路径恢复。 */
+  if (!HasDefault) {
+    SFB_MENU_STATE *Modes = AllocateZeroPool (sizeof (*Modes));
+    if (Modes != NULL) {
+      for (Index = 0; Index < Menu.Count; Index++) {
+        CHAR16 ModesPath[SFB_PATH_CHARS];
+        SFB_BOOT_ENTRY *Parent = &Menu.Entry[Index];
+        if (Parent->Kind != SfbEntrySubmenu) {
+          continue;
+        }
+        SfbJoinRoot (SfbVolumeRootPrefix (Parent->Volume), SFB_BOOTMODES_PATH,
+                     ModesPath, SFB_PATH_CHARS);
+        if (StrCmp (Parent->Path, ModesPath) != 0) {
+          continue;
+        }
+        SfbBuildSubMenu (Modes, Parent->Volume, Parent->Path);
+        if (Modes->DefaultIsPersisted && Modes->DefaultIndex != SFB_NO_INDEX &&
+            SfbIsBootModeEntry (&Modes->Entry[Modes->DefaultIndex]) &&
+            !Modes->Entry[Modes->DefaultIndex].NoDefault) {
+          HasDefault = TRUE;
+          SfbLaunchEntry (&Modes->Entry[Modes->DefaultIndex], TRUE, FALSE);
+        }
+        SfbFreeMenu (Modes);
+        if (HasDefault) {
+          break;
+        }
+      }
+      FreePool (Modes);
+    } else {
+      DEBUG ((EFI_D_ERROR, "SFB: cannot allocate boot modes menu\n"));
+    }
   }
 
   SfbFreeMenu (&Menu);

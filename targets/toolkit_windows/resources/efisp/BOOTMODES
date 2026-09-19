@@ -1,0 +1,3 @@
+Android:boot.efi
+Android (Real State):boot_normal.efi
+$Android backup:boot_backup.efi

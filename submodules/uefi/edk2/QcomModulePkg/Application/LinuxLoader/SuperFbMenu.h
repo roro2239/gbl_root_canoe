@@ -41,6 +41,7 @@
  * levels deep.
  */
 #define SFB_BOOTENTRIES_PATH  L"\\BOOTENTRIES"
+#define SFB_BOOTMODES_PATH    L"\\BOOTMODES"
 
 /*
  * Optional file, looked for in a boot entry's own directory, naming UEFI driver
@@ -263,6 +264,12 @@ SfbFreeMenu (IN OUT SFB_MENU_STATE *Menu);
 /* Persist Entry as the entry the menu timeout launches. */
 EFI_STATUS
 SfbSaveDefaultEntry (IN CONST SFB_BOOT_ENTRY *Entry);
+
+BOOLEAN
+SfbIsBootModeEntry (IN CONST SFB_BOOT_ENTRY *Entry);
+
+BOOLEAN
+SfbConfirmBootMode (IN CONST SFB_BOOT_ENTRY *Entry);
 
 /* Persist Entry as the single user-added boot menu entry, replacing any
  * previous one. */

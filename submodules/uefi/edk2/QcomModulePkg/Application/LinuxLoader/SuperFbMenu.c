@@ -335,6 +335,10 @@ SfbBootDisplayName (IN CONST CHAR16 *Name, IN CONST CHAR16 *FilePath)
   if (Name != NULL && FilePath != NULL) {
     CONST CHAR16 *FileName = SfbGetFileName (FilePath);
 
+    if (StrCmp (Name, L"Boot Modes") == 0 && SfbStrCaseEqual (FileName, L"BOOTMODES")) {
+      return SfbStr (StrBootModes);
+    }
+
     if (StrCmp (Name, L"Android") == 0 && SfbStrCaseEqual (FileName, L"boot.efi")) {
       return SfbStr (StrBootAndroidFakeLocked);
     }
@@ -361,6 +365,30 @@ SfbBootDisplayName (IN CONST CHAR16 *Name, IN CONST CHAR16 *FilePath)
     }
   }
   return (Name != NULL && Name[0] != L'\0') ? Name : L"...";
+}
+
+BOOLEAN
+SfbConfirmBootMode (IN CONST SFB_BOOT_ENTRY *Entry)
+{
+  UINTN Step;
+  CHAR16 Progress[40];
+
+  for (Step = 1; Step <= 3; Step++) {
+    /* 丢弃进入确认页及上一步遗留的按键，避免一次按键穿透多步。 */
+    gBS->Stall (1000000);
+    if (EFI_ERROR (gST->ConIn->Reset (gST->ConIn, FALSE))) {
+      return FALSE;
+    }
+    SfbBeginScreen (SfbStr (StrConfirmBootMode), NULL);
+    SfbDrawRow (FALSE, L"", SfbBootDisplayName (Entry->Desc, Entry->Path));
+    UnicodeSPrint (Progress, sizeof (Progress), SfbStr (StrConfirmThree), (UINT32)Step);
+    SfbPanelNote (Progress);
+    SfbEndScreen (SfbStr (StrConfirmOrCancel));
+    if (SfbWaitForKey (0) != SfbKeySelect) {
+      return FALSE;
+    }
+  }
+  return TRUE;
 }
 
 /*
@@ -531,7 +559,7 @@ SfbRunSubMenu (IN EFI_HANDLE   Volume,
         SfbReportStatus (Title, Status);
         break;
       }
-      Cursor = 0;
+      Cursor = Menu->DefaultIsPersisted ? Menu->DefaultIndex : 0;
       Rebuild = FALSE;
     }
 
@@ -569,8 +597,9 @@ SfbRunSubMenu (IN EFI_HANDLE   Volume,
 
     case SfbEntryEfiFile:
     default:
-      Status = SfbLaunchEntry (&Menu->Entry[Chosen], TRUE, TRUE);//Entries in submenu never defaults
-      if (EFI_ERROR (Status)) {
+      Status = SfbLaunchEntry (&Menu->Entry[Chosen],
+                               !SfbIsBootModeEntry (&Menu->Entry[Chosen]), TRUE);
+      if (EFI_ERROR (Status) && Status != EFI_ABORTED) {
         SfbReportStatus (SfbStr (StrBootFailed), Status);
       }
       Rebuild = TRUE;
@@ -660,7 +689,7 @@ SfbRunBootMenu (VOID)
     case SfbEntryEfiFile:
     default:
       Status = SfbLaunchEntry (&Menu.Entry[Chosen], FALSE, TRUE);
-      if (EFI_ERROR (Status)) {
+      if (EFI_ERROR (Status) && Status != EFI_ABORTED) {
         SfbReportStatus (SfbStr (StrBootFailed), Status);
       }
       /* Media or variables may have changed while the image ran. */
