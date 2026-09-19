@@ -117,7 +117,7 @@ BlConfirm (
 
   AtUiBeginScreen (Title, NULL);
   AtUiPrint (L"%s\r\n", (Warning != NULL) ? Warning : L"");
-  AtUiPrint (L"Power = confirm   Vol+/- = cancel");
+  AtUiEndScreen (L"Power = confirm   Vol+/- = cancel");
 
   Key = AtUiWaitForKey (0);
   if (Key != AtKeySelect) {

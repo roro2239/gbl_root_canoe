@@ -131,10 +131,11 @@ AtUiEnterMenu (
 /* ---- drawing ------------------------------------------------------------ */
 
 STATIC UINT32 mAtY;
+STATIC UINT32 mAtFooterY;
 STATIC BOOLEAN mAtGfxTried;
 
 STATIC VOID
-AtUiDrawText (IN CONST CHAR16 *Text, IN BOOLEAN Selected)
+AtUiDrawText (IN CONST CHAR16 *Text, IN BOOLEAN Selected, IN BOOLEAN Centered)
 {
   CHAR16 Line[512];
   UINTN Index = 0;
@@ -151,7 +152,8 @@ AtUiDrawText (IN CONST CHAR16 *Text, IN BOOLEAN Selected)
     if (*Text == L'\n' || Used + Advance > Width - 48 || Index == 511) {
       Line[Index] = L'\0';
       SfbGfxFillRect (0, mAtY, Width, 40, Bg);
-      SfbGfxDrawText (Line, 24, mAtY + 4, Fg, Bg);
+      SfbGfxDrawText (Line, Centered ? (Width - SfbGfxTextWidth (Line)) / 2 : 24,
+                      mAtY + 4, Fg, Bg);
       mAtY += 40;
       Index = 0;
       Used = 0;
@@ -164,7 +166,8 @@ AtUiDrawText (IN CONST CHAR16 *Text, IN BOOLEAN Selected)
   if (Index != 0) {
     Line[Index] = L'\0';
     SfbGfxFillRect (0, mAtY, Width, 40, Bg);
-    SfbGfxDrawText (Line, 24, mAtY + 4, Fg, Bg);
+    SfbGfxDrawText (Line, Centered ? (Width - SfbGfxTextWidth (Line)) / 2 : 24,
+                      mAtY + 4, Fg, Bg);
     mAtY += 40;
   }
 }
@@ -178,7 +181,7 @@ AtUiPrint (IN CONST CHAR16 *Format, ...)
   UnicodeVSPrint (Text, sizeof (Text), AtUiText (Format), Args);
   VA_END (Args);
   if (SfbGfxActive ()) {
-    AtUiDrawText (Text, FALSE);
+    AtUiDrawText (Text, FALSE, FALSE);
   } else {
     Print (L"%s\r\n", Text);
   }
@@ -192,8 +195,21 @@ AtUiBeginScreen (IN CONST CHAR16 *Title, IN CONST CHAR16 *Subtitle)
     SfbGfxInit ();
   }
   if (SfbGfxActive ()) {
+    UINT32 Width, Height, PanelHeight, PanelTop;
+    SfbGfxGetScreen (&Width, &Height);
+    /* 与一级菜单使用相同的面板高度和垂直居中基准。 */
+    PanelHeight = MIN (MAX (Height / 3, 368), Height - 32);
+    PanelTop = (Height - PanelHeight) / 2;
+    mAtFooterY = PanelTop + PanelHeight - 88;
+    gST->ConOut->EnableCursor (gST->ConOut, FALSE);
     SfbGfxClear (SFB_COLOR_BG);
-    mAtY = 24;
+    SfbGfxHLine (PanelTop, 0, Width - 1, 2, SFB_COLOR_ACCENT);
+    SfbGfxHLine (PanelTop + PanelHeight - 2, 0, Width - 1, 2, SFB_COLOR_ACCENT);
+    mAtY = PanelTop + 20;
+    AtUiDrawText (AtUiText (Title), FALSE, TRUE);
+    if (Subtitle != NULL) AtUiDrawText (AtUiText (Subtitle), FALSE, TRUE);
+    mAtY += 12;
+    return;
   } else {
     gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_TITLE);
     gST->ConOut->ClearScreen (gST->ConOut);
@@ -209,8 +225,12 @@ AtUiBeginScreen (IN CONST CHAR16 *Title, IN CONST CHAR16 *Subtitle)
 VOID
 AtUiEndScreen (IN CONST CHAR16 *Footer)
 {
-  mAtY += 12;
-  if (Footer != NULL) AtUiPrint (L"%s", AtUiText (Footer));
+  if (SfbGfxActive ()) {
+    mAtY = mAtFooterY;
+    if (Footer != NULL) AtUiDrawText (AtUiText (Footer), FALSE, TRUE);
+  } else if (Footer != NULL) {
+    AtUiPrint (L"%s", AtUiText (Footer));
+  }
 }
 
 VOID
@@ -220,7 +240,7 @@ AtUiDrawRow (IN BOOLEAN Selected, IN CONST CHAR16 *Marker, IN CONST CHAR16 *Text
   UnicodeSPrint (Row, sizeof (Row), L"%s %s %s", Selected ? L">" : L" ",
                  Marker != NULL ? Marker : L" ", AtUiText (Text));
   if (SfbGfxActive ()) {
-    AtUiDrawText (Row, Selected);
+    AtUiDrawText (Row, Selected, FALSE);
   } else {
     gST->ConOut->SetAttribute (gST->ConOut,
                                Selected ? AT_ATTR_SELECTED : AT_ATTR_NORMAL);
@@ -313,15 +333,15 @@ AtUiRunMenu (
   while (TRUE) {
     AtUiBeginScreen (Title, NULL);
     if (SfbGfxActive ()) {
-      UINT32 Width, Height;
+      UINT32 Width;
       UINTN MaxRows = 1;
-      SfbGfxGetScreen (&Width, &Height);
+      SfbGfxGetScreen (&Width, NULL);
       /* 为最长项目及两行按键提示预留空间，480 像素屏幕也可滚动。 */
       for (Index = 0; Index < Count; Index++) {
         UINTN Rows = (SfbGfxTextWidth (AtUiText (Items[Index])) + 64) / (Width - 48) + 1;
         if (Rows > MaxRows) MaxRows = Rows;
       }
-      Visible = MIN (Count, MAX (1, (Height - mAtY - 104) / (MaxRows * 40)));
+      Visible = MIN (Count, MAX (1, (mAtFooterY > mAtY + 12 ? mAtFooterY - mAtY - 12 : 0) / (MaxRows * 40)));
     }
 
     Start = AtUiWindowStart (Cursor, Count, Visible);

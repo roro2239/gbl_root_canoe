@@ -207,7 +207,7 @@ AtConfirmReset5x (
     AtUiBeginScreen (L"Reset ARB Index", NULL);
     AtUiPrint (L"WARNING: this writes to the TEE and may lose keys.");
     AtUiPrint (L"Confirm %u/5", (UINT32)Step);
-    AtUiPrint (L"Power = confirm   Vol+/- = cancel");
+    AtUiEndScreen (L"Power = confirm   Vol+/- = cancel");
 
     Key = AtUiWaitForKey (0);
     if (Key != AtKeySelect) {
