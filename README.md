@@ -105,9 +105,9 @@ Common commands include:
 | --- | --- | --- |
 | 启动安卓（假回锁） | `boot.efi` | 假回锁，保留默认入口 |
 | 启动安卓（真实状态） | `boot_normal.efi` | 透传原始锁状态与启动验证状态 |
-| Android backup | `boot_backup.efi` | 模块更新前的默认启动文件（若存在） |
+| 启动安卓（备份） | `boot_backup.efi` | 模块更新前的默认启动文件（若存在） |
 
-两个模式均尝试绕过已知 OPlus `forceenablefastboot` 验证分支，假回锁模式也会生效。原本没有该验证标识的 ABL 保留原 fastboot 路径；已绕过的已知分支保持不变；存在标识但无法安全识别时构建失败，详情见补丁日志。仅更新 BDS/工具不会生成新的 loader，已有安装需执行完整修补更新才能获得真实状态入口。这两个随包入口在中文图形菜单中显示上述中文名称；BOOTENTRIES 仍保留 ASCII 名称与原文件路径，自定义名称不受影响。
+两个模式均尝试绕过已知 OPlus `forceenablefastboot` 验证分支，假回锁模式也会生效。原本没有该验证标识的 ABL 保留原 fastboot 路径；已绕过的已知分支保持不变；存在标识但无法安全识别时构建失败，详情见补丁日志。仅更新 BDS/工具不会生成新的 loader，已有安装需执行完整修补更新才能获得真实状态入口。菜单采用黑底白字，选中项白底黑字；随包启动入口显示上述中文名称，Android Tools 显示为“安卓工具”；BOOTENTRIES 仍保留 ASCII 名称与原文件路径，自定义名称不受影响。
 
 手动调用：`patch_abl 输入.efi 输出.efi normal` 或 `patch_abl 输入.efi 输出.efi fake_locked`；省略模式保持旧版假回锁行为。必须使用从原始 ABL 提取的 loader，不能用已假回锁产物生成真实状态模式。两种模式共享 GBL 与适用的去黄字补丁，但不共享假回锁状态修改。
 

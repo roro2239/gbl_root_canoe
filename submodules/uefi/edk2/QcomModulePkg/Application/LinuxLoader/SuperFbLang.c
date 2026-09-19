@@ -54,6 +54,8 @@ STATIC CONST SFB_LANG_STRING mSfbStrings[StrCount] = {
   { L"Choose a volume to browse.", L"选择要浏览的卷。" },
   { L"Android (Fake Lock)", L"启动安卓（假回锁）" },
   { L"Android (Real State)", L"启动安卓（真实状态）" },
+  { L"Android backup", L"启动安卓（备份）" },
+  { L"Android Tools", L"安卓工具" },
 };
 
 CONST CHAR16 *

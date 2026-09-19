@@ -16,15 +16,15 @@
 #include <Uefi.h>
 #include "SuperFbFont.h"
 
-/* 0x00RRGGBB palette for the lilac theme. */
-#define SFB_COLOR_BG        0x00141018   /* screen background          */
-#define SFB_COLOR_PANEL     0x001C1524   /* panel background           */
-#define SFB_COLOR_ACCENT    0x00D8B4E0   /* lilac accent (title/frame) */
-#define SFB_COLOR_ACCENT_D  0x008C6A96   /* dim purple (hints)         */
-#define SFB_COLOR_TEXT      0x00E8E2EC   /* body text                  */
-#define SFB_COLOR_SEL_BG    0x00B98FD0   /* selection bar              */
-#define SFB_COLOR_SEL_FG    0x00141018   /* text on selection          */
-#define SFB_COLOR_ERR       0x00E08A8A   /* errors                     */
+/* 0x00RRGGBB 黑白配色；选中行反色显示。 */
+#define SFB_COLOR_BG        0x00000000
+#define SFB_COLOR_PANEL     0x00000000
+#define SFB_COLOR_ACCENT    0x00FFFFFF
+#define SFB_COLOR_ACCENT_D  0x00FFFFFF
+#define SFB_COLOR_TEXT      0x00FFFFFF
+#define SFB_COLOR_SEL_BG    0x00FFFFFF
+#define SFB_COLOR_SEL_FG    0x00000000
+#define SFB_COLOR_ERR       0x00FFFFFF
 
 /*
  * Locate the graphics output protocol.  Returns FALSE when no usable GOP is

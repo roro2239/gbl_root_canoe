@@ -342,6 +342,14 @@ SfbBootDisplayName (IN CONST CHAR16 *Name, IN CONST CHAR16 *FilePath)
         SfbStrCaseEqual (FileName, L"boot_normal.efi")) {
       return SfbStr (StrBootAndroidRealState);
     }
+    if (StrCmp (Name, L"Android backup") == 0 &&
+        SfbStrCaseEqual (FileName, L"boot_backup.efi")) {
+      return SfbStr (StrBootAndroidBackup);
+    }
+    if (StrCmp (Name, L"Android Tools") == 0 &&
+        SfbStrCaseEqual (FileName, L"ENTRIES")) {
+      return SfbStr (StrAndroidTools);
+    }
   }
   return (Name != NULL && Name[0] != L'\0') ? Name : L"...";
 }
@@ -449,7 +457,8 @@ SfbDrawMenu (IN CONST SFB_MENU_STATE *Menu,
     if (Entry->Kind == SfbEntrySubmenu) {
       CHAR16  Text[SFB_DESC_CHARS + 4];
 
-      UnicodeSPrint (Text, sizeof (Text), L"%s >", Entry->Desc);
+      UnicodeSPrint (Text, sizeof (Text), L"%s >",
+                     SfbBootDisplayName (Entry->Desc, Entry->Path));
       SfbDrawRow ((BOOLEAN)(Index == Cursor), Marker, Text);
     } else {
       CONST CHAR16 *Text = Entry->Desc;
@@ -496,6 +505,7 @@ SfbRunSubMenu (IN EFI_HANDLE   Volume,
   SFB_KEY         Key;
   EFI_STATUS      Status;
 
+  Title = SfbBootDisplayName (Title, EntriesPath);
   Menu = AllocateZeroPool (sizeof (*Menu));
   if (Menu == NULL) {
     return;

@@ -4,7 +4,7 @@
 
 本项目的中文启动菜单移植并改编自 [kepcry/gbl_root_canoe](https://github.com/kepcry/gbl_root_canoe)，来源提交为 [`66a81b4f9f4548e2d9ebfcb852eb343c628aa723`](https://github.com/kepcry/gbl_root_canoe/tree/66a81b4f9f4548e2d9ebfcb852eb343c628aa723)。感谢该仓库作者及贡献者提供的中文界面实现。
 
-移植范围包括 `SuperFbLang.*` 的中英文文案、`SuperFbFont.*` 的点阵字形查询、`SuperFbGfx.*` 的 GOP 绘制、紫色菜单面板设计，以及 `tools/gen_sfb_font/gen_sfb_font.ps1` 字库生成脚本。菜单和文件浏览器按本项目已有接口适配，保留原有启动、按键及启动项存储行为。此次不包含上游 PIN、设置存储或字符画功能。
+移植范围包括 `SuperFbLang.*` 的中英文文案、`SuperFbFont.*` 的点阵字形查询、`SuperFbGfx.*` 的 GOP 绘制、菜单面板布局（本项目现采用黑白配色），以及 `tools/gen_sfb_font/gen_sfb_font.ps1` 字库生成脚本。菜单和文件浏览器按本项目已有接口适配，保留原有启动、按键及启动项存储行为。此次不包含上游 PIN、设置存储或字符画功能。
 
 上游仓库根许可证为 GPL-3.0；上述带独立许可证标识的 C/H 文件保留原有 `Copyright (c) 2026, contributors to the canoe ABL tree` 和 `BSD-3-Clause` 标识，其许可全文见 [BSD-3-Clause](licenses/SuperFb-BSD-3-Clause.txt)。生成脚本保留上游来源，适用仓库根 [LICENSE](LICENSE)。此声明不表示上游作者为本项目背书。
 
