@@ -149,6 +149,7 @@
 	gEfiPartTypeSystemPartGuid
 
 [Protocols]
+	gEfiKernelProtocolGuid
 	gEfiGraphicsOutputProtocolGuid
 	gEfiSimpleTextInputExProtocolGuid
 	gEfiBlockIoProtocolGuid

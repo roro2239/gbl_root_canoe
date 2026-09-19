@@ -76,6 +76,7 @@
 #include <Library/StackCanary.h>
 #include "Library/ThreadStack.h"
 #include <Protocol/EFICardInfo.h>
+#include <Protocol/EFIKernelInterface.h>
 #include <Protocol/SimpleTextIn.h>
 #include "SuperFbMenu.h"
 
@@ -182,6 +183,85 @@ WaitForVolumeUpKey (IN UINT32 TimeoutMs)
   return KeyDetected;
 }
 
+STATIC VOID
+DisablePhoenixWatchdog (VOID)
+{
+  /* PLK110 PhoenixDxe 协议 v1：+0x18 为无参数的 EFI_STATUS 关闭入口。
+   * 前两个函数槽位不在此处调用；未知版本不能沿用这一私有布局。 */
+  typedef struct {
+    UINT64 Revision;
+    VOID *Reserved[2];
+    EFI_STATUS (EFIAPI *DisableWatchdog) (VOID);
+  } PHOENIX_PROTOCOL;
+  STATIC EFI_GUID PhoenixProtocolGuid = {
+    0x7d2a39f3, 0x0f8c, 0x47a0,
+    { 0x9b, 0x51, 0xf2, 0x69, 0xb4, 0xba, 0xf9, 0x93 }
+  };
+  PHOENIX_PROTOCOL *Phoenix = NULL;
+  EFI_STATUS Status;
+
+  STATIC_ASSERT (OFFSET_OF (PHOENIX_PROTOCOL, DisableWatchdog) == 0x18,
+                 "Phoenix protocol ABI requires 64-bit pointers");
+
+  Status = gBS->LocateProtocol (&PhoenixProtocolGuid, NULL, (VOID **)&Phoenix);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((EFI_D_ERROR, "SFB: Phoenix watchdog protocol unavailable: %r\n",
+            Status));
+    return;
+  }
+  if (Phoenix == NULL || Phoenix->Revision != 1) {
+    DEBUG ((EFI_D_ERROR, "SFB: Phoenix watchdog protocol version unsupported\n"));
+    return;
+  }
+  if (Phoenix->DisableWatchdog == NULL) {
+    DEBUG ((EFI_D_ERROR, "SFB: Phoenix watchdog disable interface unavailable\n"));
+    return;
+  }
+
+  /* 该入口取消并关闭独立的 60 秒事件，仅在 BDS 初始化时调用一次。 */
+  Status = Phoenix->DisableWatchdog ();
+  if (EFI_ERROR (Status)) {
+    DEBUG ((EFI_D_ERROR, "SFB: Phoenix watchdog timer cancellation failed: %r\n",
+            Status));
+    return;
+  }
+  DEBUG ((EFI_D_INFO, "SFB: Phoenix watchdog timer cancelled\n"));
+}
+
+STATIC VOID
+DisableBootWatchdogs (VOID)
+{
+  EFI_STATUS Status;
+  EFI_KERNEL_PROTOCOL *Kernel = NULL;
+
+  Status = gBS->SetWatchdogTimer (0, 0x10000, 0, NULL);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((EFI_D_ERROR, "SFB: UEFI watchdog disable failed: %r\n", Status));
+  }
+
+  /* 标准服务不保证关闭高通内核看门狗，因此独立调用厂商接口。 */
+  Status = gBS->LocateProtocol (&gEfiKernelProtocolGuid, NULL,
+                               (VOID **)&Kernel);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((EFI_D_ERROR, "SFB: watchdog kernel protocol unavailable: %r\n",
+            Status));
+    return;
+  }
+  if (Kernel == NULL ||
+      Kernel->Version < EFI_KERNEL_PROTOCOL_VER_WDOG_INTF) {
+    DEBUG ((EFI_D_ERROR, "SFB: kernel watchdog protocol version unsupported\n"));
+    return;
+  }
+  if (Kernel->WDog == NULL || Kernel->WDog->WdogDisable == NULL) {
+    DEBUG ((EFI_D_ERROR, "SFB: kernel watchdog disable interface unavailable\n"));
+    return;
+  }
+
+  /* 此接口无返回值，只记录已调用，不能据此确认硬件状态。 */
+  Kernel->WDog->WdogDisable ();
+  DEBUG ((EFI_D_INFO, "SFB: kernel WdogDisable invoked\n"));
+}
+
 EFI_STATUS EFIAPI  __attribute__ ( (no_sanitize ("safe-stack")))
 LinuxLoaderEntry (IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
 {
@@ -210,6 +290,9 @@ LinuxLoaderEntry (IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
             Status));
     goto stack_guard_update_default;
   }
+
+  DisablePhoenixWatchdog ();
+  DisableBootWatchdogs ();
 
   Status = EnumeratePartitions ();
 
