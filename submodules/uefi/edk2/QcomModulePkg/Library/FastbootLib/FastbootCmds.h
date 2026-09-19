@@ -210,6 +210,7 @@ VOID
 DataReady (IN UINT64 Size, IN VOID *Data);
 
 BOOLEAN FastbootFatal (VOID);
+BOOLEAN FastbootSessionBusy (VOID);
 VOID PartitionDump (VOID);
 
 VOID *FastbootDloadBuffer (VOID);

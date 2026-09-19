@@ -187,6 +187,7 @@ LinuxLoaderEntry (IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
 {
 
   EFI_STATUS Status;
+  BOOLEAN ReturnToMenu;
 
    /* Update stack check guard with random value for better security */
   /* SilentMode Boot */
@@ -257,6 +258,7 @@ LinuxLoaderEntry (IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
      * before the menu takes input, then run the menu. It only returns TRUE when
      * the user picked fastboot.
      */
+ShowBootMenu:
     SfbShowEnteringMenu ();
     if (!SfbRunBootMenu ()) {
       Status = EFI_SUCCESS;
@@ -272,10 +274,14 @@ LinuxLoaderEntry (IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE *SystemTable)
   RebootDevice (NORMAL_MODE);
 #endif
   DEBUG ((EFI_D_INFO, "Launching fastboot\n"));
-  Status = FastbootInitialize ();
+  Status = FastbootInitialize (&ReturnToMenu);
   if (EFI_ERROR (Status)) {
     DEBUG ((EFI_D_ERROR, "Failed to Launch Fastboot App: %d\n", Status));
     goto stack_guard_update_default;
+  }
+
+  if (ReturnToMenu) {
+    goto ShowBootMenu;
   }
 
 stack_guard_update_default:

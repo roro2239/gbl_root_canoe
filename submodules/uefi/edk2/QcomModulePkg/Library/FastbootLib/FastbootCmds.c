@@ -142,6 +142,8 @@ typedef struct boot_img_hdr_v0 boot_img_hdr;
 
 STATIC FASTBOOT_VAR *Varlist;
 STATIC BOOLEAN Finished = FALSE;
+STATIC UINTN mPendingCallbacks;
+STATIC EFI_EVENT mFatalSendErrorEvent;
 STATIC CHAR8 FullProduct[MAX_RSP_SIZE];
 STATIC CHAR8 StrVariant[MAX_RSP_SIZE];
 STATIC CHAR8 StrSocVersion[MAX_RSP_SIZE];
@@ -309,6 +311,7 @@ FastbootAck (IN CONST CHAR8 *code, CONST CHAR8 *Reason)
 
   AsciiSPrint (GetFastbootDeviceData ()->gTxBuffer, MAX_RSP_SIZE, "%a%a", code,
                Reason);
+  GetFastbootDeviceData ()->ResponsePending = TRUE;
   GetFastbootDeviceData ()->UsbDeviceProtocol->Send (
       ENDPOINT_OUT, AsciiStrLen (GetFastbootDeviceData ()->gTxBuffer),
       GetFastbootDeviceData ()->gTxBuffer);
@@ -1797,6 +1800,7 @@ FlashCompleteHandler (IN EFI_EVENT Event, IN VOID *Context)
   FastbootOkay ("");
 Out:
   gBS->CloseEvent (Event);
+  mPendingCallbacks--;
   Event = NULL;
 }
 
@@ -1816,8 +1820,10 @@ STATIC EFI_STATUS FastbootOkayDelay (VOID)
     return Status;
   }
 
+  mPendingCallbacks++;
   Status = gBS->SetTimer (FlashCompleteEvent, TimerRelative, 100000);
   if (EFI_ERROR (Status)) {
+    mPendingCallbacks--;
     gBS->CloseEvent (FlashCompleteEvent);
     FlashCompleteEvent = NULL;
     FastbootFail ("Failed to set timer for waiting flash completely");
@@ -1894,6 +1900,14 @@ FatalErrorNotify (IN EFI_EVENT Event, IN VOID *Context)
 {
   DEBUG ((EFI_D_ERROR, "Fatal error sending command response. Exiting.\r\n"));
   Finished = TRUE;
+}
+
+/* 异步命令、下载、刷写和应答仍持有会话资源时不能返回菜单。 */
+BOOLEAN FastbootSessionBusy (VOID)
+{
+  return mState != ExpectCmdState || !IsFlashComplete ||
+         mPendingCallbacks != 0 || UsbTimerStarted ||
+         GetFastbootDeviceData ()->ResponsePending;
 }
 
 /* Fatal error during fastboot */
@@ -1988,6 +2002,17 @@ FastbootCmdsUnInit (VOID)
 {
   EFI_STATUS Status;
 
+  if (IsMultiThreadSupported) {
+    KernIntf->Lock->AcquireLock (LockFlash);
+    KernIntf->Lock->ReleaseLock (LockFlash);
+  }
+  /* 先停止控制器，确保 DMA 不再引用即将释放的缓冲区。 */
+  Status = GetFastbootDeviceData ()->UsbDeviceProtocol->Stop ();
+  if (EFI_ERROR (Status)) {
+    DEBUG ((EFI_D_ERROR, "Failed to stop fastboot USB: %r\n", Status));
+    return Status;
+  }
+  StopUsbTimer ();
   if (mDataBuffer) {
     Status = GetFastbootDeviceData ()->UsbDeviceProtocol->FreeTransferBuffer (
         (VOID *)mDataBuffer);
@@ -1996,8 +2021,21 @@ FastbootCmdsUnInit (VOID)
       return Status;
     }
   }
+  mDataBuffer = NULL;
+  mUsbDataBuffer = NULL;
+  mFlashDataBuffer = NULL;
   FastbootUnInit ();
-  GetFastbootDeviceData ()->UsbDeviceProtocol->Stop ();
+  if (mFatalSendErrorEvent != NULL) {
+    gBS->CloseEvent (mFatalSendErrorEvent);
+    mFatalSendErrorEvent = NULL;
+  }
+  if (IsMultiThreadSupported) {
+    KernIntf->Lock->DestroyLock (LockDownload);
+    KernIntf->Lock->DestroyLock (LockFlash);
+    LockDownload = NULL;
+    LockFlash = NULL;
+    IsMultiThreadSupported = FALSE;
+  }
   return EFI_SUCCESS;
 }
 
@@ -2167,11 +2205,19 @@ EFI_STATUS
 FastbootCmdsInit (VOID)
 {
   EFI_STATUS Status;
-  EFI_EVENT mFatalSendErrorEvent;
   CHAR8 *FastBootBuffer;
   UINT64 MaxBufferSize = MAX_BUFFER_SIZE;
   UINT64 MinBufferSize = MIN_BUFFER_SIZE;
 
+  Finished = FALSE;
+  mState = ExpectCmdState;
+  mNumDataBytes = 0;
+  mFlashNumDataBytes = 0;
+  mBytesReceivedSoFar = 0;
+  FlashResult = EFI_SUCCESS;
+  FlashSplitNeeded = FALSE;
+  Lun = NO_LUN;
+  LunSet = FALSE;
   mDataBuffer = NULL;
   mUsbDataBuffer = NULL;
   mFlashDataBuffer = NULL;
@@ -2468,7 +2514,12 @@ AcceptCmdTimerInit (IN UINT64 Size, IN CHAR8 *Data)
                              AcceptCmdHandler, AcceptCmdInfo, &CmdEvent);
 
   if (!EFI_ERROR (Status)) {
+    mPendingCallbacks++;
     Status = gBS->SetTimer (CmdEvent, TimerRelative, 100000);
+    if (EFI_ERROR (Status)) {
+      mPendingCallbacks--;
+      gBS->CloseEvent (CmdEvent);
+    }
   }
 
   if (EFI_ERROR (Status)) {
@@ -2490,6 +2541,7 @@ AcceptCmdHandler (IN EFI_EVENT Event, IN VOID *Context)
   }
 
   AcceptCmd (AcceptCmdInfo->Size, AcceptCmdInfo->Data);
+  mPendingCallbacks--;
   FreePool (AcceptCmdInfo);
   AcceptCmdInfo = NULL;
 }

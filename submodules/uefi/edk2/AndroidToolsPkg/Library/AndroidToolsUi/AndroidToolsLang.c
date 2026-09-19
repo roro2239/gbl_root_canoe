@@ -7,6 +7,8 @@ STATIC CONST struct { CONST CHAR16 *En; CONST CHAR16 *Zh; } mStrings[] = {
   { L"FASTBOOT MODE", L"FASTBOOT 模式" },
   { L"Power Off", L"关机" },
   { L"Restart", L"重启" },
+  { L"Return to Main Menu", L"返回主菜单" },
+  { L"Busy. Try returning after transfer completes.", L"正在传输，请完成后再返回" },
   { L"Powering off...", L"正在关机..." },
   { L"Restarting...", L"正在重启..." },
   { L"Vol Up/Down: move   Power: select", L"音量键：移动  电源键：选择" },

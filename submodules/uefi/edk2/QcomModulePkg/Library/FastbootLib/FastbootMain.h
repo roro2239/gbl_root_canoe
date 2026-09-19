@@ -51,10 +51,12 @@ typedef struct FasbootDevice {
   EFI_USB_DEVICE_PROTOCOL *UsbDeviceProtocol;
   VOID *gRxBuffer;
   VOID *gTxBuffer;
+  BOOLEAN ResponsePending;
 } FastbootDeviceData;
 
 FastbootDeviceData *GetFastbootDeviceData (VOID);
 EFI_STATUS HandleUsbEvents (VOID);
 EFI_STATUS FastbootUsbDeviceStop (VOID);
-EFI_STATUS FastbootInitialize (VOID);
+/* 仅在用户请求返回且清理成功后置位。 */
+EFI_STATUS FastbootInitialize (OUT BOOLEAN *ReturnToMenu);
 #endif

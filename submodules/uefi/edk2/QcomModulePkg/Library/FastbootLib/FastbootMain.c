@@ -321,6 +321,7 @@ ProcessBulkXfrCompleteTx (IN USB_DEVICE_TRANSFER_OUTCOME *Uto)
   switch (Uto->Status) {
   case UsbDeviceTransferStatusCompleteOK:
     DEBUG ((EFI_D_VERBOSE, "UsbDeviceTransferStatusCompleteOK\n"));
+    Fbd.ResponsePending = FALSE;
     /* Just Queue the next recieve, must be a Command */
     if (FastbootCurrentState () == ExpectDataState)
       Status = Fbd.UsbDeviceProtocol->Send (ENDPOINT_IN, GetXfrSize (),
@@ -361,6 +362,7 @@ EFI_STATUS HandleUsbEvents (VOID)
     }
     if (UsbDeviceStateDisconnected == Payload.DeviceState) {
       DEBUG ((EFI_D_VERBOSE, "Fastboot Device disconnected\n"));
+      Fbd.ResponsePending = FALSE;
     }
   } else if (UsbDeviceEventTransferNotification == Msg) {
     /* Check if the transfer notification is on the Bulk EP and process it*/
@@ -395,8 +397,8 @@ EFI_STATUS HandleUsbEvents (VOID)
 /*
  * On-device fastboot mode screen.
  *
- * While fastboot waits for a USB host it also offers two on-device actions -
- * power off and restart - driven by the same volume/power keys as the boot
+ * While fastboot waits for a USB host it also offers three on-device actions -
+ * power off, restart and return to menu - driven by the same volume/power keys as the boot
  * menu. The USB event loop polls the console between transfers, so a host
  * connecting and issuing commands is unaffected.
  */
@@ -407,18 +409,20 @@ VOID ShutdownDevice (VOID);
  * header is deliberately not pulled in here just for these constants. */
 #define NORMAL_MODE  0x0
 
-#define FB_ACTION_ROWS  2
+#define FB_ACTION_ROWS  3
 
 STATIC CONST CHAR16 *mFbActionRow[FB_ACTION_ROWS] = {
   L"Power Off",
   L"Restart",
+  L"Return to Main Menu",
 };
 STATIC UINTN mFbActionCursor = 0;
 
 typedef enum {
   FbActionNone = 0,
   FbActionPowerOff,
-  FbActionRestart
+  FbActionRestart,
+  FbActionReturnToMenu
 } FB_ACTION;
 
 STATIC
@@ -477,12 +481,21 @@ FastbootPollActionKey (VOID)
     return FbActionNone;
   }
 
-  return (mFbActionCursor == 0) ? FbActionPowerOff : FbActionRestart;
+  switch (mFbActionCursor) {
+  case 0: return FbActionPowerOff;
+  case 1: return FbActionRestart;
+  default: return FbActionReturnToMenu;
+  }
 }
 
-EFI_STATUS FastbootInitialize (VOID)
+EFI_STATUS FastbootInitialize (OUT BOOLEAN *ReturnToMenu)
 {
   EFI_STATUS Status = EFI_SUCCESS;
+  EFI_STATUS LoopStatus;
+  BOOLEAN MenuRequested = FALSE;
+
+  *ReturnToMenu = FALSE;
+  Fbd.ResponsePending = FALSE;
 
   DEBUG ((EFI_D_INFO, "Fastboot Build Info: %a %a\n", __DATE__, __TIME__));
 
@@ -524,6 +537,14 @@ EFI_STATUS FastbootInitialize (VOID)
       RebootDevice (NORMAL_MODE);
       return EFI_SUCCESS;
 
+    case FbActionReturnToMenu:
+      if (FastbootSessionBusy ()) {
+        AtUiEndScreen (L"Busy. Try returning after transfer completes.");
+        break;
+      }
+      MenuRequested = TRUE;
+      goto ExitFastboot;
+
     default:
       break;
     }
@@ -534,6 +555,8 @@ EFI_STATUS FastbootInitialize (VOID)
     }
   }
 
+ExitFastboot:
+  LoopStatus = Status;
   /* Close the fastboot app and stop USB device */
   Status = FastbootCmdsUnInit ();
   if (Status != EFI_SUCCESS) {
@@ -542,5 +565,12 @@ EFI_STATUS FastbootInitialize (VOID)
   }
 
   Status = FastbootUsbDeviceStop ();
-  return Status;
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+  if (EFI_ERROR (LoopStatus) && LoopStatus != EFI_ABORTED) {
+    return LoopStatus;
+  }
+  *ReturnToMenu = MenuRequested;
+  return EFI_SUCCESS;
 }
