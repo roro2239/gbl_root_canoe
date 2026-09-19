@@ -62,6 +62,9 @@ typedef enum {
   StrConfirmBootMode,
   StrConfirmThree,
   StrConfirmOrCancel,
+  StrBootModeDataWarning,
+  StrBootModeFormatWarning,
+  StrBootModeBackupWarning,
   StrCount
 } SFB_STR_ID;
 

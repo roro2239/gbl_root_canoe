@@ -63,6 +63,9 @@ STATIC CONST SFB_LANG_STRING mSfbStrings[StrCount] = {
   { L"Confirm boot mode", L"确认启动方式" },
   { L"Confirm %u/3", L"确认 %u/3" },
   { L"Power: confirm   Volume: cancel", L"电源键：确认  音量键：取消" },
+  { L"Warning: switching may prevent data decryption.", L"警告：切换启动状态可能导致" },
+  { L"A data wipe may be required.", L"数据无法解密，需要格式化" },
+  { L"Back up important data first.", L"并清除数据。请先备份重要数据。" },
 };
 
 CONST CHAR16 *

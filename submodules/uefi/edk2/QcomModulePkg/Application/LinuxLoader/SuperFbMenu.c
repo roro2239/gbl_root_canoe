@@ -379,8 +379,11 @@ SfbConfirmBootMode (IN CONST SFB_BOOT_ENTRY *Entry)
     if (EFI_ERROR (gST->ConIn->Reset (gST->ConIn, FALSE))) {
       return FALSE;
     }
-    SfbBeginScreen (SfbStr (StrConfirmBootMode), NULL);
-    SfbDrawRow (FALSE, L"", SfbBootDisplayName (Entry->Desc, Entry->Path));
+    SfbBeginScreen (SfbStr (StrConfirmBootMode),
+                    SfbBootDisplayName (Entry->Desc, Entry->Path));
+    SfbDrawRow (FALSE, L"", SfbStr (StrBootModeDataWarning));
+    SfbDrawRow (FALSE, L"", SfbStr (StrBootModeFormatWarning));
+    SfbDrawRow (FALSE, L"", SfbStr (StrBootModeBackupWarning));
     UnicodeSPrint (Progress, sizeof (Progress), SfbStr (StrConfirmThree), (UINT32)Step);
     SfbPanelNote (Progress);
     SfbEndScreen (SfbStr (StrConfirmOrCancel));
