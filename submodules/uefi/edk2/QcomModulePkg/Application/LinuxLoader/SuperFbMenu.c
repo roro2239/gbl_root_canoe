@@ -11,6 +11,7 @@
 #include "SuperFbMenu.h"
 #include "SuperFbLang.h"
 #include "SuperFbGfx.h"
+#include <AtDevInfo.h>
 
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
@@ -467,16 +468,50 @@ SfbShowEnteringMenu (VOID)
 /* ---- boot menu ---------------------------------------------------------- */
 
 STATIC
+EFI_STATUS
+SfbReadBlState (OUT BOOLEAN *Unlocked)
+{
+  QCOM_VERIFIEDBOOT_PROTOCOL *VbIntf = NULL;
+  DeviceInfo                 Info;
+  EFI_STATUS                 Status;
+
+  Status = gBS->LocateProtocol (&gEfiQcomVerifiedBootProtocolGuid, NULL,
+                                (VOID **)&VbIntf);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+  if (VbIntf == NULL || VbIntf->VBRwDeviceState == NULL) {
+    return EFI_UNSUPPORTED;
+  }
+
+  /* 直接读取持久化状态，不使用启动模式或被假回锁修改的内存状态。 */
+  SetMem (&Info, sizeof (Info), 0xFF);
+  Status = VbIntf->VBRwDeviceState (VbIntf, READ_CONFIG, (UINT8 *)&Info,
+                                   (UINT32)sizeof (Info));
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+  if (CompareMem (Info.magic, DEVICE_MAGIC, DEVICE_MAGIC_SIZE) != 0 ||
+      Info.is_unlocked > 1 || Info.is_unlock_critical > 1) {
+    return EFI_VOLUME_CORRUPTED;
+  }
+
+  *Unlocked = Info.is_unlocked;
+  return EFI_SUCCESS;
+}
+
+STATIC
 VOID
 SfbDrawMenu (IN CONST SFB_MENU_STATE *Menu,
              IN UINTN                Cursor,
-             IN CONST CHAR16         *Title)
+             IN CONST CHAR16         *Title,
+             IN CONST CHAR16         *Subtitle)
 {
   UINTN  Start;
   UINTN  Index;
   UINTN  Last;
 
-  SfbBeginScreen (Title, NULL);
+  SfbBeginScreen (Title, Subtitle);
 
   if (Menu->Count == 0) {
     SfbPanelNote (SfbStr (StrNoEntries));
@@ -566,7 +601,7 @@ SfbRunSubMenu (IN EFI_HANDLE   Volume,
       Rebuild = FALSE;
     }
 
-    SfbDrawMenu (Menu, Cursor, Title);
+    SfbDrawMenu (Menu, Cursor, Title, NULL);
 
     /* Same input model as the root menu: volume keys move, power confirms. */
     Key = SfbWaitForKey (0);
@@ -623,6 +658,8 @@ SfbRunBootMenu (VOID)
   BOOLEAN         Rebuild = TRUE;
   SFB_KEY         Key;
   EFI_STATUS      Status;
+  BOOLEAN         Unlocked = FALSE;
+  CHAR16          BlState[96];
 
   ZeroMem (&Menu, sizeof (Menu));
   Menu.DefaultIndex = SFB_NO_INDEX;
@@ -633,11 +670,20 @@ SfbRunBootMenu (VOID)
     if (Rebuild) {
       SfbFreeMenu (&Menu);
       SfbBuildMenu (&Menu);
+      Status = SfbReadBlState (&Unlocked);
+      if (EFI_ERROR (Status)) {
+        DEBUG ((EFI_D_ERROR, "SFB: Read BL DeviceInfo failed: %r\n", Status));
+        UnicodeSPrint (BlState, sizeof (BlState), SfbStr (StrBlStateUnknown),
+                       (UINT64)Status);
+      } else {
+        UnicodeSPrint (BlState, sizeof (BlState), L"%s",
+                       SfbStr (Unlocked ? StrBlStateUnlocked : StrBlStateLocked));
+      }
       Cursor = (Menu.DefaultIndex == SFB_NO_INDEX) ? 0 : Menu.DefaultIndex;
       Rebuild = FALSE;
     }
 
-    SfbDrawMenu (&Menu, Cursor, SfbStr (StrBootMenu));
+    SfbDrawMenu (&Menu, Cursor, SfbStr (StrBootMenu), BlState);
 
     /* The menu is purely interactive: it waits for a key indefinitely and
      * never launches anything unattended. */

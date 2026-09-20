@@ -66,6 +66,9 @@ STATIC CONST SFB_LANG_STRING mSfbStrings[StrCount] = {
   { L"Warning: switching may prevent data decryption.", L"警告：切换启动状态可能导致" },
   { L"A data wipe may be required.", L"数据无法解密，需要格式化" },
   { L"Back up important data first.", L"并清除数据。请先备份重要数据。" },
+  { L"Real BL state: locked", L"真实 BL 状态：已锁定" },
+  { L"Real BL state: unlocked", L"真实 BL 状态：已解锁" },
+  { L"Real BL state: unknown (0x%lx)", L"真实 BL 状态：未知 (0x%lx)" },
 };
 
 CONST CHAR16 *

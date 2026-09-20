@@ -82,6 +82,7 @@
 	SuperFbGfx.h
 
 [Packages]
+	AndroidToolsPkg/AndroidToolsPkg.dec
 	ArmPkg/ArmPkg.dec
 	MdePkg/MdePkg.dec
 	EmbeddedPkg/EmbeddedPkg.dec
@@ -149,6 +150,7 @@
 	gEfiPartTypeSystemPartGuid
 
 [Protocols]
+	gEfiQcomVerifiedBootProtocolGuid
 	gEfiKernelProtocolGuid
 	gEfiGraphicsOutputProtocolGuid
 	gEfiSimpleTextInputExProtocolGuid
