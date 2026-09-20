@@ -32,12 +32,12 @@ const i18n = {
     taskStatus: "任务状态",
     flash: "刷写到另一槽位",
     bdsTools: "仅更新BDS和Tools",
-    patchPart: "修补当前槽位分区",
+    patchPart: "修补 vendor_boot",
     confirmBdsTools: "确认更新 BDS/Tools",
     confirmPatchPart: "确认修补分区",
     modalBdsStep1: "将把 BDS.efi 刷入 efisp 分区，并用模块自带的 efisp 文件夹（BOOTENTRIES 与 tools）替换 persist 上的启动根目录。不会改动 ABL 与 boot.efi。",
     modalBdsStep2: "第二次确认: 这是高风险写入操作，错误的 BDS 或 efisp 写入可能导致无法进入启动菜单。确认后将立即开始。",
-    modalPatchStep1: (slot) => `将对当前活动槽位 ${slot} 执行勾选的修补操作。调试模式下不会执行实际修补。`,
+    modalPatchStep1: "将执行勾选的修补操作。调试模式下不会执行实际修补。",
     modalPatchStep2: "第二次确认：修补分区属于高风险操作，错误会导致系统无法启动，确认后立即执行。",
     toastStartBdsTools: "BDS/Tools 更新任务已启动",
     toastBdsToolsDone: "BDS/Tools 更新任务运行成功",
@@ -45,9 +45,8 @@ const i18n = {
     updateEfisp: "更新 efisp",
     debugMode: "调试模式",
     debugHint: "刷写与分区修补仅处理、不写入；efisp 使用模块 tmp/efisp。BDS / Tools 更新不受此选项影响。",
-    lblPatchVendorBoot: "修补 vendor_boot 分区",
-    lblPatchSuper: "修补 super 分区",
-    patchMutualTip: "两项互斥，可不选",
+    lblPatchVendorBoot: "禁用安全模块",
+    lblPatchSuper: "同时替换挂载配置",
     warning: "Bootloader 写入可能导致无法启动，请确认镜像与机型匹配。",
     imageMap: "镜像映射",
     partition: "分区名",
@@ -81,11 +80,11 @@ const i18n = {
     toastLogCleared: "日志已清空",
     modalStep1Debug: "调试模式：将执行所有处理流程但不刷写分区，生成的文件保存在 tmp 目录。",
     modalStep1Normal: (slot) => `第一次确认: 将把当前槽位的 BL 分区拷贝到槽位 ${slot}`,
-    modalStep1PatchOnly: (slot, name) => `第一次确认: 仅对目标槽位 ${slot} 执行 ${name} 修补，不刷写 ABL、不更新 efisp。`,
+    modalStep1PatchOnly: (slot, name) => `第一次确认: 仅对目标槽位 ${slot} 执行“${name}”，不刷写 ABL、不更新 efisp。`,
     modalStep2: "第二次确认: 这是高风险写入操作，错误操作可能导致目标槽位无法启动。确认后将立即开始。",
     withEfisp: "，并更新 efisp。",
     noEfisp: "，不更新 efisp。",
-    withPatch: (name) => `，同步对目标槽位执行 ${name} 修补`,
+    withPatch: (name) => `，同步对目标槽位执行“${name}”`,
     confirmSlot: "请确认槽位无误。",
     taskRunning:"任务运行中",
     waitOperate:"等待操作",
@@ -103,12 +102,12 @@ const i18n = {
     taskStatus: "Task Status",
     flash: "Flash To Other Slot",
     bdsTools: "Update BDS & Tools Only",
-    patchPart: "Patch Current Slot",
+    patchPart: "Patch vendor_boot",
     confirmBdsTools: "Confirm BDS/Tools Update",
     confirmPatchPart: "Confirm Partition Patch",
     modalBdsStep1: "Will flash BDS.efi to the efisp partition and replace the persist boot root with the bundled efisp folder (BOOTENTRIES and tools). The ABL and boot.efi are not touched.",
     modalBdsStep2: "2nd Confirm: This is a high-risk write. A wrong BDS or efisp write may prevent the boot menu from loading. It starts immediately after confirm.",
-    modalPatchStep1: (slot) => `Will patch the current active slot ${slot} with the selected option. Debug mode does not write partitions.`,
+    modalPatchStep1: "Apply the selected patch. Debug mode does not write partitions.",
     modalPatchStep2: "2nd Confirm: Partition patching is high-risk, bad patch may cause boot failure. Start immediately after confirm.",
     toastStartBdsTools: "BDS/Tools update started",
     toastBdsToolsDone: "BDS/Tools update task succeeded",
@@ -116,9 +115,8 @@ const i18n = {
     updateEfisp: "Update efisp",
     debugMode: "Debug mode",
     debugHint: "Flash and patch: process without writing; efisp uses module tmp/efisp. BDS / Tools updates are not affected.",
-    lblPatchVendorBoot: "Patch vendor_boot partition",
-    lblPatchSuper: "Patch super partition",
-    patchMutualTip: "Select at most one option",
+    lblPatchVendorBoot: "Disable security module",
+    lblPatchSuper: "Also replace mount configuration",
     warning: "Flashing bootloader partitions is high risk. Verify images match your device before starting.",
     imageMap: "Image Mapping",
     partition: "Partition",
@@ -152,11 +150,11 @@ const i18n = {
     toastLogCleared: "Log cleared",
     modalStep1Debug: "Debug Mode: All processes run without flashing partitions. Files saved to tmp directory.",
     modalStep1Normal: (slot) => `1st Confirm: Copy BL partition from current slot to ${slot}`,
-    modalStep1PatchOnly: (slot, name) => `1st Confirm: Patch ${name} on target slot ${slot} only. No ABL flash, no efisp update.`,
+    modalStep1PatchOnly: (slot, name) => `1st Confirm: Apply "${name}" on target slot ${slot} only. No ABL flash, no efisp update.`,
     modalStep2: "2nd Confirm: This is a high-risk write operation. Wrong action may brick the target slot. Flash will start immediately after confirm.",
     withEfisp: ", and update efisp.",
     noEfisp: ", efisp not updated.",
-    withPatch: (name) => `, apply ${name} patch to target slot`,
+    withPatch: (name) => `, apply "${name}" to target slot`,
     confirmSlot: "Please confirm slot is correct.",
     taskRunning:"Task Running",
     waitOperate:"Waiting",
@@ -168,14 +166,12 @@ const i18n = {
 
 Object.assign(i18n.zh, {
   patchPanel: "分区修补", otaPanel: "OTA 与启动维护",
-  patchIntro: "super 选项通过修改 vendor_boot 中的 fstab 移除验证，包含 vendor_boot 修补。",
-  lblPatchSuper: "移除 super 验证（包含 vendor_boot 修补）",
+  lblPatchSuper: "同时替换挂载配置",
   otaTip: "OTA 操作面向另一槽位；勾选的修补选项也应用到另一槽位。"
 });
 Object.assign(i18n.en, {
   patchPanel: "Partition patches", otaPanel: "OTA & boot maintenance",
-  patchIntro: "The super option removes verification through the fstab in vendor_boot and includes the vendor_boot patch.",
-  lblPatchSuper: "Remove super verification (includes vendor_boot patch)",
+  lblPatchSuper: "Also replace mount configuration",
   otaTip: "OTA operations target the other slot, including selected patches."
 });
 
@@ -204,9 +200,96 @@ const elements = {
   debugModeCheckbox: document.getElementById("debugModeCheckbox"),
   patchVendorBootCheckbox: document.getElementById("patchVendorBootCheckbox"),
   patchSuperCheckbox: document.getElementById("patchSuperCheckbox"),
-  patchMutualTip: document.getElementById("patchMutualTip"),
   pageTitle: document.getElementById("pageTitle")
 };
+
+const taskUi = Object.fromEntries(["taskDialog", "taskDialogTitle", "taskDialogContext", "taskDialogMessage", "taskDialogError", "taskDialogLog", "taskSpinner", "taskRetryButton", "taskCloseButton"].map(id => [id, document.getElementById(id)]));
+let taskSubmitting = false;
+let taskDialogId = "";
+let taskDialogFocus = null;
+let taskDialogBusy = false;
+let taskAwaitingStatus = false;
+
+function taskLabels() {
+  return state.lang === "zh"
+    ? { starting: "正在启动", running: "执行中", success: "执行完成", warning: "部分完成，请检查日志", error: "执行失败", unknown: "尚未确认任务结果，请刷新状态", retry: "刷新状态", close: "完成", uncertain: "请求结果未确认，正在查询后台任务；请勿重复执行。", log: "实时日志" }
+    : { starting: "Starting", running: "Running", success: "Completed", warning: "Partially completed — check log", error: "Failed", unknown: "Task result is unconfirmed. Refresh status.", retry: "Refresh status", close: "Done", uncertain: "Request result unconfirmed. Checking the background task; do not start again.", log: "Live log" };
+}
+
+function openTaskDialog() {
+  if (!taskUi.taskDialog.open) {
+    if (!elements.confirmModal.classList.contains("hidden")) closeConfirmModal();
+    taskDialogFocus = document.activeElement;
+    taskUi.taskDialog.showModal();
+    document.body.classList.add("task-modal-open");
+  }
+  taskUi.taskRetryButton.textContent = taskLabels().retry;
+  taskUi.taskCloseButton.textContent = taskLabels().close;
+  taskUi.taskDialogLog.setAttribute("aria-label", taskLabels().log);
+}
+
+function setTaskBusy(busy) {
+  taskDialogBusy = busy;
+  taskUi.taskCloseButton.disabled = busy;
+  taskUi.taskSpinner.classList.toggle("hidden", !busy);
+  taskUi.taskDialog.setAttribute("aria-busy", String(busy));
+}
+
+function beginTaskDialog(message) {
+  if (taskSubmitting || taskDialogBusy) return false;
+  taskSubmitting = true;
+  taskAwaitingStatus = true;
+  taskDialogId = "";
+  setTaskBusy(true);
+  taskUi.taskDialogTitle.textContent = taskLabels().starting;
+  taskUi.taskDialogContext.textContent = message;
+  taskUi.taskDialogMessage.textContent = "";
+  taskUi.taskDialogError.textContent = "";
+  taskUi.taskDialogLog.textContent = i18n[state.lang].logWaiting;
+  state.prevLogRaw = null;
+  openTaskDialog();
+  return true;
+}
+
+function taskDisplayMessage(message) {
+  if (state.activeTaskScope === "target") return message;
+  return message.replace(/\s*[（(]?(?:当前槽位|Current slot|目标槽位|Target slot)\s*:\s*_[ab][）)]?/gi, "");
+}
+
+function updateTaskDialog(s) {
+  if (taskSubmitting) return;
+  const running = s.RUNNING === "1";
+  const matches = !!s.TASK_ID && (s.TASK_ID === taskDialogId || s.TASK_ID === state.activeTaskId);
+  if (!running && !matches && !taskAwaitingStatus) return;
+  if (running) {
+    taskDialogId = s.TASK_ID || "";
+    taskAwaitingStatus = false;
+    if (taskDialogId && taskDialogId !== state.activeTaskId) rememberPendingTask(taskDialogId);
+  }
+  openTaskDialog();
+  const terminal = !running && matches && ["success", "warning", "error"].includes(s.STATE);
+  setTaskBusy(!terminal);
+  taskUi.taskDialogTitle.textContent = running ? taskLabels().running : terminal ? taskLabels()[s.STATE] : taskLabels().unknown;
+  taskUi.taskDialogMessage.textContent = running || terminal ? (s.MESSAGE ? taskDisplayMessage(s.MESSAGE) : localizedTaskMessage(s)) : taskLabels().uncertain;
+  taskUi.taskDialogError.textContent = "";
+  if (!taskUi.taskDialogContext.textContent) taskUi.taskDialogContext.textContent = taskSlotSuffix();
+  if (terminal) taskAwaitingStatus = false;
+}
+
+function closeTaskDialog() {
+  if (taskDialogBusy) return;
+  taskDialogId = "";
+  taskUi.taskDialogContext.textContent = "";
+  document.body.classList.remove("task-modal-open");
+  taskUi.taskDialog.close();
+  taskDialogFocus?.focus();
+}
+taskUi.taskDialog.addEventListener("cancel", e => {
+  e.preventDefault();
+  closeTaskDialog();
+});
+taskUi.taskCloseButton.addEventListener("click", closeTaskDialog);
+taskUi.taskRetryButton.addEventListener("click", manualRefresh);
 
 function setText(selector, value) {
   const node = document.querySelector(selector);
@@ -228,7 +311,6 @@ function applyLanguage(lang) {
   setText("#lblDebugMode", t.debugMode);
   setText("#lblPatchVendorBoot", t.lblPatchVendorBoot);
   setText("#lblPatchSuper", t.lblPatchSuper);
-  elements.patchMutualTip.textContent = t.patchMutualTip;
   setText("#lblWarning", t.warning);
   setText("#lblImageMap", t.imageMap);
   setText("#tblPartition", t.partition);
@@ -308,7 +390,7 @@ function localizedTaskMessage(status) {
   const normalized = message.toLowerCase();
   const slotMatch = message.match(/(当前槽位|Current slot|目标槽位|Target slot)\s*:\s*(_[ab])/i);
   let suffix = "";
-  if (slotMatch) {
+  if (slotMatch && state.activeTaskScope === "target") {
     const current = /当前槽位|current slot/i.test(slotMatch[1]);
     suffix = ` (${current ? t.currentSlot : t.targetSlot}: ${slotMatch[2]})`;
   }
@@ -328,7 +410,7 @@ function localizedTaskMessage(status) {
     return t.toastFlashDone + suffix;
   }
   if (status.STATE === "warning") return t.toastBlDone + suffix;
-  return message || t.waitOperate;
+  return taskDisplayMessage(message) || t.waitOperate;
 }
 
 function renderStatus(status) {
@@ -365,7 +447,7 @@ function renderStatus(status) {
   renderTable(cur, tar);
 }
 function taskSlotSuffix() {
-  if (!state.activeTaskSlot || !state.activeTaskScope) return "";
+  if (!state.activeTaskSlot || state.activeTaskScope !== "target") return "";
   const t = i18n[state.lang];
   const label = state.activeTaskScope === "current" ? t.currentSlot : t.targetSlot;
   return ` (${label}: ${state.activeTaskSlot})`;
@@ -412,6 +494,7 @@ function applyStatus(s, notify = true) {
   if (!s?.STATE) return s;
   const taskId = s.TASK_ID || "";
   renderStatus(s);
+  updateTaskDialog(s);
   const isRunning = s.RUNNING === "1";
   const terminalState = ["success", "warning", "error"].includes(s.STATE);
   if (!isRunning && terminalState && state.activeTaskId && taskId === state.activeTaskId) {
@@ -428,6 +511,7 @@ async function refreshStatus() {
   try {
     const raw = await runScript("status");
     if (!raw) throw new Error("Empty status response");
+    if (!parseKeyValueOutput(raw).STATE) throw new Error("Invalid status response");
     connectionReady = true;
     if (raw === state.prevStatusRaw) return state.status;
     state.prevStatusRaw = raw;
@@ -443,6 +527,11 @@ async function refreshStatus() {
     elements.stateChip.textContent = i18n[state.lang].statusReadFail;
     elements.stateChip.className = "chip chip-danger";
     elements.taskMessage.textContent = e.message;
+    if (taskUi.taskDialog.open || state.activeTaskId) {
+      openTaskDialog();
+      taskUi.taskDialogError.textContent = `${i18n[state.lang].statusReadFail}: ${e.message}`;
+      if (state.activeTaskId) setTaskBusy(true);
+    }
     [elements.flashButton, elements.bdsToolsButton, elements.patchPartButton].forEach(button => { button.disabled = true; });
     console.error("refreshStatus failed:", e);
     return state.status;
@@ -458,8 +547,11 @@ async function refreshLog() {
     const log = raw.replace(/@NL@/g, String.fromCharCode(10));
     elements.logOutput.textContent = log || i18n[state.lang].logWaiting;
     elements.logOutput.scrollTop = elements.logOutput.scrollHeight;
+    taskUi.taskDialogLog.textContent = elements.logOutput.textContent;
+    taskUi.taskDialogLog.scrollTop = taskUi.taskDialogLog.scrollHeight;
   } catch (e) {
     elements.logOutput.textContent = `${state.lang === "zh" ? "日志读取失败" : "Log Read Failed"}: ${e.message}`;
+    taskUi.taskDialogLog.textContent = elements.logOutput.textContent;
   }
 }
 
@@ -474,16 +566,18 @@ function closeConfirmModal() {
 
 function getPatchArgString() {
   const parts = [];
-  if (elements.patchVendorBootCheckbox.checked) parts.push("vendor_boot=1");
-  if (elements.patchSuperCheckbox.checked) parts.push("super=1");
+  if (elements.patchVendorBootCheckbox.checked) {
+    parts.push(elements.patchSuperCheckbox.checked ? "super=1" : "vendor_boot=1");
+  }
   if (elements.debugModeCheckbox.checked) parts.push("debug=1");
   return parts.join(",");
 }
 
 function getSelectedPatchName() {
   const t = i18n[state.lang];
-  if (elements.patchVendorBootCheckbox.checked) return "vendor_boot";
-  if (elements.patchSuperCheckbox.checked) return "super";
+  if (elements.patchVendorBootCheckbox.checked) {
+    return elements.patchSuperCheckbox.checked ? `${t.lblPatchVendorBoot} + ${t.lblPatchSuper}` : t.lblPatchVendorBoot;
+  }
   return "";
 }
 
@@ -493,13 +587,17 @@ function openConfirmModal(action) {
   const t = i18n[state.lang];
   state.pendingAction = action;
   state.confirmStep = 1;
+  document.getElementById("confirmSlots").classList.toggle("hidden", action !== "flash");
+  const debugHint = document.getElementById("debugHint");
+  debugHint.textContent = t.debugHint;
+  debugHint.classList.toggle("hidden", action === "bds-tools" || !elements.debugModeCheckbox.checked);
   if (action === "bds-tools") {
     document.querySelector("#modalTitle").textContent = t.confirmBdsTools;
     elements.confirmText.textContent = t.modalBdsStep1;
     elements.nextConfirmButton.textContent = t.continue;
   } else if (action === "patch-part") {
     document.querySelector("#modalTitle").textContent = t.confirmPatchPart;
-    elements.confirmText.textContent = t.modalPatchStep1(state.status?.CURRENT_SLOT || "?");
+    elements.confirmText.textContent = t.modalPatchStep1;
     elements.nextConfirmButton.textContent = t.continue;
   } else {
     document.querySelector("#modalTitle").textContent = t.confirmFlash;
@@ -573,18 +671,25 @@ function showTaskStarting(message, taskId) {
 
 function handleStartResult(out, startedMessage, scope = "", slot = "") {
   const t = i18n[state.lang];
+  taskSubmitting = false;
   if (out.ALREADY_RUNNING) {
     toast(t.toastRunning);
     return;
   }
   if (out.STARTED === "1" || out.FINISHED) {
     rememberPendingTask(out.TASK_ID || "", scope, slot);
+    taskDialogId = out.TASK_ID || "";
     if (out.STARTED === "1") {
       showTaskStarting(startedMessage, out.TASK_ID || "");
+      updateTaskDialog(state.status);
       toast(startedMessage);
     }
     return;
   }
+  taskAwaitingStatus = false;
+  setTaskBusy(false);
+  taskUi.taskDialogTitle.textContent = taskLabels().error;
+  taskUi.taskDialogMessage.textContent = out.ERROR || t.toastStartError;
   toast(t.toastStartError);
 }
 
@@ -598,30 +703,45 @@ async function startFlash() {
   const targetSlot = state.status?.TARGET_SLOT || "?";
   const startMessage = `${dbg ? t.toastStartDebug : t.toastStartFlash} (${t.targetSlot}: ${targetSlot})`;
 
+  if (!beginTaskDialog(startMessage)) return;
   try {
     const out = parseKeyValueOutput(await runScript("start", fullMode));
     handleStartResult(out, startMessage, "target", targetSlot);
-  } catch (e) { toast(`${t.startFail}: ${e.message}`); }
+  } catch (e) {
+    taskSubmitting = false;
+    taskUi.taskDialogTitle.textContent = taskLabels().unknown;
+    taskUi.taskDialogError.textContent = `${taskLabels().uncertain}\n${e.message}`;
+  }
   await manualRefresh();
 }
 
 async function startPatchPart() {
   const t = i18n[state.lang];
   const currentSlot = state.status?.CURRENT_SLOT || "?";
-  const startMessage = `${t.toastStartPatch} (${t.currentSlot}: ${currentSlot})`;
+  const startMessage = t.toastStartPatch;
+  if (!beginTaskDialog(startMessage)) return;
   try {
     const out = parseKeyValueOutput(await runScript("start-patch", getPatchArgString()));
     handleStartResult(out, startMessage, "current", currentSlot);
-  } catch (e) { toast(`${t.startFail}: ${e.message}`); }
+  } catch (e) {
+    taskSubmitting = false;
+    taskUi.taskDialogTitle.textContent = taskLabels().unknown;
+    taskUi.taskDialogError.textContent = `${taskLabels().uncertain}\n${e.message}`;
+  }
   await manualRefresh();
 }
 
 async function startBdsTools() {
   const t = i18n[state.lang];
+  if (!beginTaskDialog(t.toastStartBdsTools)) return;
   try {
     const out = parseKeyValueOutput(await runScript("start", "update-bds-tools"));
     handleStartResult(out, t.toastStartBdsTools);
-  } catch (e) { toast(`${t.startFail}: ${e.message}`); }
+  } catch (e) {
+    taskSubmitting = false;
+    taskUi.taskDialogTitle.textContent = taskLabels().unknown;
+    taskUi.taskDialogError.textContent = `${taskLabels().uncertain}\n${e.message}`;
+  }
   await manualRefresh();
 }
 
@@ -654,7 +774,7 @@ async function poll() {
     console.error("poll failed:", e);
   } finally {
     state.pollInFlight = false;
-    const running = state.taskStarted || state.status?.RUNNING === "1";
+    const running = taskDialogBusy || state.taskStarted || state.status?.RUNNING === "1";
     const refreshNow = state.refreshRequested;
     state.refreshRequested = false;
     schedulePoll(refreshNow ? 0 : (running ? 1000 : 8000));
@@ -675,17 +795,15 @@ async function manualRefresh() {
   }
   await poll();
 }
-function initPatchCheckboxMutual() {
-  elements.patchVendorBootCheckbox.addEventListener("change", () => {
-    if (elements.patchVendorBootCheckbox.checked) {
-      elements.patchSuperCheckbox.checked = false;
-    }
-  });
-  elements.patchSuperCheckbox.addEventListener("change", () => {
-    if (elements.patchSuperCheckbox.checked) {
-      elements.patchVendorBootCheckbox.checked = false;
-    }
-  });
+function initPatchCheckboxDependency() {
+  const sync = () => {
+    const enabled = elements.patchVendorBootCheckbox.checked;
+    elements.patchSuperCheckbox.disabled = !enabled;
+    if (!enabled) elements.patchSuperCheckbox.checked = false;
+  };
+  elements.patchVendorBootCheckbox.addEventListener("change", sync);
+  elements.patchSuperCheckbox.addEventListener("change", sync);
+  sync();
 }
 
 async function init() {
@@ -696,7 +814,7 @@ async function init() {
     if (!info?.moduleDir) throw new Error("KernelSU module information unavailable");
     state.moduleDir = info.moduleDir;
     state.scriptPath = `${state.moduleDir}/bin/bl_flasher.sh`;
-    initPatchCheckboxMutual();
+    initPatchCheckboxDependency();
     try {
       const pending = JSON.parse(localStorage.getItem("blFlasherPendingTask") || "null");
       state.activeTaskId = pending?.taskId || localStorage.getItem("blFlasherPendingTaskId") || "";

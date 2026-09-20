@@ -18,53 +18,45 @@
   <main class="grid-layout">
     <section class="summary" aria-labelledby="lblSlotStatus">
       <h2 class="sr-only" id="lblSlotStatus">槽位状态</h2>
-      <dl class="stats-grid">
-        <div><dt id="lblCurrentSlot">当前槽位</dt><dd id="currentSlot">—</dd></div>
-        <div><dt id="lblTargetSlot">目标槽位</dt><dd id="targetSlot">—</dd></div>
-        <div><dt id="lblImageCount">镜像数量</dt><dd id="imageCount">—</dd></div>
+      <dl class="task-summary">
         <div class="task-stat"><dt id="lblTaskStatus">任务状态</dt><dd id="taskMessage" role="status">等待操作</dd></div>
       </dl>
     </section>
     <section class="panel patch-panel">
       <div class="panel-heading"><h2 data-i18n="patchPanel">分区修补</h2></div>
-      <p class="caption" id="patchIntro" data-i18n="patchIntro">super 选项通过修改 vendor_boot 中的 fstab 移除验证，包含 vendor_boot 修补。</p>
       <label class="option-check" for="patchVendorBootCheckbox">
-        <input id="patchVendorBootCheckbox" type="checkbox" aria-describedby="patchMutualTip" />
-        <span id="lblPatchVendorBoot">修补 vendor_boot 分区</span>
+        <input id="patchVendorBootCheckbox" type="checkbox" />
+        <span id="lblPatchVendorBoot">禁用安全模块</span>
       </label>
 
       <label class="option-check" for="patchSuperCheckbox">
-        <input id="patchSuperCheckbox" type="checkbox" aria-describedby="patchIntro patchMutualTip" />
-        <span id="lblPatchSuper">修补 super 分区</span>
+        <input id="patchSuperCheckbox" type="checkbox" disabled />
+        <span id="lblPatchSuper">同时替换挂载配置</span>
       </label>
 
-      <div class="action-strip"><button class="primary-button" id="patchPartButton" type="button" data-i18n="patchPart" disabled>修补当前槽位</button></div>
-      <p class="caption hint-text" id="patchMutualTip">vendor_boot 和 super 仅可选择一项</p>
+      <div class="action-strip"><button class="primary-button" id="patchPartButton" type="button" data-i18n="patchPart" disabled>修补 vendor_boot</button></div>
 
 
     </section>
 
     <section class="panel ota-panel">
       <div class="panel-heading"><h2 data-i18n="otaPanel">OTA 与启动维护</h2></div>
-      <div class="action-strip">
-        <button class="primary-button" id="flashButton" type="button" disabled data-i18n="flash">刷写到另一槽位</button>
-        <button class="ghost-button" id="bdsToolsButton" type="button" disabled data-i18n="bdsTools">仅更新BDS和Tools</button>
-      </div>
-
       <label class="option-check" for="updateEfispCheckbox">
         <input id="updateEfispCheckbox" type="checkbox" checked />
         <span id="lblUpdateEfisp">更新 efisp（默认开启）</span>
       </label>
 
-      <p class="caption" data-i18n="otaTip">OTA 操作面向另一槽位；勾选的修补选项也应用到另一槽位。</p>
+      <div class="action-strip">
+        <button class="primary-button" id="flashButton" type="button" disabled data-i18n="flash">刷写到另一槽位</button>
+        <button class="ghost-button" id="bdsToolsButton" type="button" disabled data-i18n="bdsTools">仅更新BDS和Tools</button>
+      </div>
+
     </section>
     <aside class="operation-notes">
       <label class="option-check" for="debugModeCheckbox">
-        <input id="debugModeCheckbox" type="checkbox" aria-describedby="debugHint" />
+        <input id="debugModeCheckbox" type="checkbox" />
         <span id="lblDebugMode">调试模式</span>
       </label>
-      <p class="caption" id="debugHint" data-i18n="debugHint">刷写与分区修补仅处理、不写入；efisp 使用模块 tmp/efisp。BDS / Tools 更新不受此选项影响。</p>
-      <p class="warning-copy" id="lblWarning">Bootloader 写入可能导致无法启动，请确认镜像与机型匹配。</p>
     </aside>
     <section class="panel map-panel">
       <div class="panel-heading">
@@ -92,7 +84,7 @@
 
     <section class="panel log-panel">
       <div class="panel-heading">
-        <div class="heading-group"><h2 id="lblLog">实时日志</h2><span class="caption" id="lblAutoPoll">最近 200 行 · 自动刷新</span></div>
+        <div class="heading-group"><h2 id="lblLog">实时日志</h2></div>
         <button class="ghost-button" id="clearLogButton" type="button" data-i18n="clearLog">清空日志</button>
       </div>
       <pre id="logOutput" tabindex="0" aria-labelledby="lblLog">等待日志输出...</pre>
@@ -105,6 +97,12 @@
     <p class="risk-label" id="modalRisk">高风险操作</p>
     <h2 id="modalTitle">确认刷写</h2>
     <p id="confirmText">即将开始刷写，请确认操作对象和槽位。</p>
+    <dl class="stats-grid hidden" id="confirmSlots">
+        <div><dt id="lblCurrentSlot">当前槽位</dt><dd id="currentSlot">—</dd></div>
+        <div><dt id="lblTargetSlot">目标槽位</dt><dd id="targetSlot">—</dd></div>
+        <div><dt id="lblImageCount">镜像数量</dt><dd id="imageCount">—</dd></div>
+    </dl>
+    <p class="caption hidden" id="debugHint"></p>
     <div class="modal-actions">
       <button class="ghost-button" id="cancelConfirmButton" type="button" data-i18n="cancel">取消</button>
       <button class="primary-button" id="nextConfirmButton" type="button" data-i18n="continue">继续</button>
@@ -112,6 +110,14 @@
   </div>
 </div>
 
+<dialog id="taskDialog" aria-labelledby="taskDialogTitle" aria-describedby="taskDialogMessage">
+  <div class="task-heading"><span id="taskSpinner" class="task-spinner" aria-hidden="true"></span><h2 id="taskDialogTitle">正在启动</h2></div>
+  <p id="taskDialogContext" class="caption"></p>
+  <p id="taskDialogMessage" role="status" aria-live="polite"></p>
+  <p id="taskDialogError" role="alert"></p>
+  <pre id="taskDialogLog" tabindex="0" aria-label="实时日志"></pre>
+  <div class="modal-actions"><button id="taskRetryButton" class="ghost-button" type="button">刷新状态</button><button id="taskCloseButton" class="primary-button" type="button" disabled>完成</button></div>
+</dialog>
 <script type="module" src="app.js"></script>
 </body>
 </html>
