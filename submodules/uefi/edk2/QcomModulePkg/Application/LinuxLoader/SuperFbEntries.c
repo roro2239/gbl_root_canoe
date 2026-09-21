@@ -10,6 +10,8 @@
  */
 
 #include "SuperFbMenu.h"
+#include "SuperFbLang.h"
+#include "SuperFbWarning.h"
 
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
@@ -837,6 +839,7 @@ SfbBuildSubMenu (OUT SFB_MENU_STATE *Menu,
 {
   EFI_FILE_PROTOCOL  *Root = NULL;
   CONST CHAR16       *RootPrefix;
+  CHAR16             ToolsPath[SFB_PATH_CHARS];
 
   ZeroMem (Menu, sizeof (*Menu));
   Menu->DefaultIndex = SFB_NO_INDEX;
@@ -849,6 +852,11 @@ SfbBuildSubMenu (OUT SFB_MENU_STATE *Menu,
    * ENTRIES file is resolved relative to it, never to the file's own directory,
    * so the same RootPrefix that served the parent menu serves the child. */
   RootPrefix = SfbVolumeRootPrefix (Volume);
+  SfbJoinRoot (RootPrefix, L"\\tools\\ENTRIES", ToolsPath, SFB_PATH_CHARS);
+  if (StrCmp (EntriesPath, ToolsPath) == 0) {
+    /* 先保留设置行，工具列表达到上限时仍可关闭提示。 */
+    SfbAppendBuiltIn (Menu, SfbEntryBootWarning, L"开机提示");
+  }
   if (!EFI_ERROR (SfbOpenVolumeRoot (Volume, &Root)) && Root != NULL) {
     SfbAppendEntriesFile (Menu, Volume, Root, RootPrefix, EntriesPath);
     Root->Close (Root);
@@ -1062,6 +1070,77 @@ SfbPreloadDrivers (IN EFI_HANDLE Volume, IN CONST CHAR16 *EntryPath)
   }
 }
 
+/* 仅对随包安卓入口的内存副本恢复提示，EFI 工具和磁盘文件均不修改。 */
+STATIC
+EFI_STATUS
+SfbPrepareWarningImage (IN CONST SFB_BOOT_ENTRY *Entry, OUT VOID **Buffer,
+                        OUT UINTN *Size)
+{
+  EFI_STATUS Status;
+  EFI_STATUS CloseStatus;
+  EFI_FILE_PROTOCOL *Root = NULL;
+  EFI_FILE_PROTOCOL *File = NULL;
+  BOOLEAN Enabled;
+  BOOLEAN Unlocked;
+  UINT64 Length;
+  UINTN Done = 0;
+
+  *Buffer = NULL;
+  *Size = 0;
+  if (!SfbIsBootModeEntry (Entry)) {
+    return EFI_SUCCESS;
+  }
+  Status = SfbLoadBootWarning (&Enabled);
+  if (EFI_ERROR (Status) || !Enabled) {
+    return Status;
+  }
+  Status = SfbReadBlState (&Unlocked);
+  if (EFI_ERROR (Status) || !Unlocked) {
+    return Status;
+  }
+  Status = SfbOpenVolumeRoot (Entry->Volume, &Root);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+  Status = Root->Open (Root, &File, (CHAR16 *)Entry->Path, EFI_FILE_MODE_READ, 0);
+  CloseStatus = Root->Close (Root);
+  if (!EFI_ERROR (Status) && EFI_ERROR (CloseStatus)) {
+    Status = CloseStatus;
+  }
+  if (EFI_ERROR (Status)) {
+    if (File != NULL) File->Close (File);
+    return Status;
+  }
+  Status = File->SetPosition (File, MAX_UINT64);
+  if (!EFI_ERROR (Status)) Status = File->GetPosition (File, &Length);
+  if (!EFI_ERROR (Status) && (Length == 0 || Length > SIZE_32MB)) {
+    Status = EFI_BAD_BUFFER_SIZE;
+  }
+  if (!EFI_ERROR (Status)) {
+    *Size = (UINTN)Length;
+    *Buffer = AllocatePool (*Size);
+    if (*Buffer == NULL) Status = EFI_OUT_OF_RESOURCES;
+  }
+  if (!EFI_ERROR (Status)) Status = File->SetPosition (File, 0);
+  while (!EFI_ERROR (Status) && Done < *Size) {
+    UINTN Read = *Size - Done;
+    Status = File->Read (File, &Read, (UINT8 *)*Buffer + Done);
+    if (!EFI_ERROR (Status) && (Read == 0 || Read > *Size - Done)) {
+      Status = EFI_DEVICE_ERROR;
+    }
+    if (!EFI_ERROR (Status)) Done += Read;
+  }
+  CloseStatus = File->Close (File);
+  if (!EFI_ERROR (Status) && EFI_ERROR (CloseStatus)) Status = CloseStatus;
+  if (!EFI_ERROR (Status)) Status = SfbEnableBootWarning (*Buffer, *Size);
+  if (EFI_ERROR (Status) && *Buffer != NULL) {
+    FreePool (*Buffer);
+    *Buffer = NULL;
+    *Size = 0;
+  }
+  return Status;
+}
+
 EFI_STATUS
 SfbLaunchEntry (IN CONST SFB_BOOT_ENTRY *Entry,
                 IN BOOLEAN              Temporary,
@@ -1071,6 +1150,8 @@ SfbLaunchEntry (IN CONST SFB_BOOT_ENTRY *Entry,
   EFI_HANDLE  ImageHandle = NULL;
   CHAR16      *ExitData = NULL;
   UINTN       ExitDataSize = 0;
+  VOID        *ImageBuffer = NULL;
+  UINTN       ImageSize = 0;
 
   if (Entry->Kind != SfbEntryEfiFile || Entry->DevicePath == NULL) {
     return EFI_INVALID_PARAMETER;
@@ -1078,6 +1159,14 @@ SfbLaunchEntry (IN CONST SFB_BOOT_ENTRY *Entry,
 
   /* 自动启动不弹窗；手动启动必须在保存默认项和加载驱动前完成确认。 */
   if (ClearScreen && SfbIsBootModeEntry (Entry) && !SfbConfirmBootMode (Entry)) {
+    return EFI_ABORTED;
+  }
+
+  Status = SfbPrepareWarningImage (Entry, &ImageBuffer, &ImageSize);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((EFI_D_ERROR, "SFB: boot warning '%s' failed: %r\n", Entry->Path, Status));
+    /* 自动启动也必须显示失败原因，不能忽略用户明确启用的设置。 */
+    SfbReportStatus (SfbStr (StrBootWarningFailed), Status);
     return EFI_ABORTED;
   }
 
@@ -1098,6 +1187,7 @@ SfbLaunchEntry (IN CONST SFB_BOOT_ENTRY *Entry,
     Status = SfbSaveDefaultEntry (Entry);
     if (EFI_ERROR (Status)) {
       DEBUG ((EFI_D_ERROR, "SFB: saving default entry failed: %r\n", Status));
+      if (ImageBuffer != NULL) FreePool (ImageBuffer);
       return Status;
     }
   }
@@ -1111,7 +1201,8 @@ SfbLaunchEntry (IN CONST SFB_BOOT_ENTRY *Entry,
 
   SfbBypassSecurity();
   Status = gBS->LoadImage (FALSE, gImageHandle, Entry->DevicePath,
-                           NULL, 0, &ImageHandle);
+                           ImageBuffer, ImageSize, &ImageHandle);
+  if (ImageBuffer != NULL) FreePool (ImageBuffer);
 
   if (EFI_ERROR (Status)) {
     DEBUG ((EFI_D_ERROR, "SFB: LoadImage '%s' failed: %r\n",

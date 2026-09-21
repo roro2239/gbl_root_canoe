@@ -68,6 +68,11 @@ typedef enum {
   StrBlStateLocked,
   StrBlStateUnlocked,
   StrBlStateUnknown,
+  StrBootWarningOn,
+  StrBootWarningOff,
+  StrBootWarningUnknown,
+  StrBootWarningSaveFailed,
+  StrBootWarningFailed,
   StrCount
 } SFB_STR_ID;
 

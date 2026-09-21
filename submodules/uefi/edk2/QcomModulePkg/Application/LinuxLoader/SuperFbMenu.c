@@ -467,7 +467,6 @@ SfbShowEnteringMenu (VOID)
 
 /* ---- boot menu ---------------------------------------------------------- */
 
-STATIC
 EFI_STATUS
 SfbReadBlState (OUT BOOLEAN *Unlocked)
 {
@@ -499,6 +498,9 @@ SfbReadBlState (OUT BOOLEAN *Unlocked)
   *Unlocked = Info.is_unlocked;
   return EFI_SUCCESS;
 }
+
+STATIC BOOLEAN mBootWarning;
+STATIC EFI_STATUS mBootWarningStatus;
 
 STATIC
 VOID
@@ -544,6 +546,10 @@ SfbDrawMenu (IN CONST SFB_MENU_STATE *Menu,
       case SfbEntryPowerOff: Text = SfbStr (StrPowerOff); break;
       case SfbEntryRestart:  Text = SfbStr (StrRestart); break;
       case SfbEntryBack:     Text = SfbStr (StrBack); break;
+      case SfbEntryBootWarning:
+        Text = SfbStr (EFI_ERROR (mBootWarningStatus) ? StrBootWarningUnknown :
+                        (mBootWarning ? StrBootWarningOn : StrBootWarningOff));
+        break;
       default: break;
       }
       SfbDrawRow ((BOOLEAN)(Index == Cursor), Marker, Text);
@@ -597,6 +603,9 @@ SfbRunSubMenu (IN EFI_HANDLE   Volume,
         SfbReportStatus (Title, Status);
         break;
       }
+      if (Menu->Count != 0 && Menu->Entry[0].Kind == SfbEntryBootWarning) {
+        mBootWarningStatus = SfbLoadBootWarning (&mBootWarning);
+      }
       Cursor = Menu->DefaultIsPersisted ? Menu->DefaultIndex : 0;
       Rebuild = FALSE;
     }
@@ -617,6 +626,18 @@ SfbRunSubMenu (IN EFI_HANDLE   Volume,
 
     Chosen = Cursor;
     switch (Menu->Entry[Chosen].Kind) {
+    case SfbEntryBootWarning:
+      Status = SfbSaveBootWarning (!mBootWarning);
+      if (EFI_ERROR (Status)) {
+        /* 写入或刷新失败后不显示成功，重新读取以反映实际持久化结果。 */
+        SfbReportStatus (SfbStr (StrBootWarningSaveFailed), Status);
+        mBootWarningStatus = SfbLoadBootWarning (&mBootWarning);
+      } else {
+        mBootWarning = !mBootWarning;
+        mBootWarningStatus = EFI_SUCCESS;
+      }
+      break;
+
     case SfbEntryBack:
       goto done;
 

@@ -73,6 +73,8 @@
 	SuperFbMenu.h
 	SuperFbFat.c
 	SuperFbStore.c
+	SuperFbWarning.c
+	SuperFbWarning.h
 	SuperFbEntries.c
 	SuperFbMenu.c
 	SuperFbBrowser.c

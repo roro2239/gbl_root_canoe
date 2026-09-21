@@ -2,12 +2,12 @@
  * Persistent settings for the super-fastboot boot menu.
  *
  * The firmware refuses EFI variables it does not already know about, so the
- * menu keeps its two settings in the EFI System Partition instead. Only the
+ * menu keeps its settings in the EFI System Partition instead. Only the
  * last megabyte of that partition is safe to write, so the store sits at the
- * very end of it: two 1 KiB NUL-padded ASCII records, back to back, ending on
+ * very end of it: three 1 KiB NUL-padded ASCII records, back to back, ending on
  * the partition's last byte.
  *
- *   [ ... file system ... | 1 MiB scratch ... | rec 0 | rec 1 ] end of ESP
+ *   [ ... | scratch ... | warning | default | custom ] end of ESP
  *
  * Nothing here goes through the file system: the records must survive the ESP
  * being written by an operating system that knows nothing about them, and a
@@ -496,3 +496,31 @@ SfbStoreWrite (IN UINTN Slot, IN CONST CHAR8 *Text)
   return Status;
 }
 
+EFI_STATUS
+SfbLoadBootWarning (OUT BOOLEAN *Enabled)
+{
+  CHAR8 Record[SFB_STORE_SLOT_BYTES];
+  EFI_STATUS Status;
+
+  *Enabled = FALSE;
+  Status = SfbStoreRead (SFB_STORE_WARNING, Record, sizeof (Record));
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+  if (AsciiStrCmp (Record, "SFBW1|1") == 0) {
+    *Enabled = TRUE;
+  } else if (AsciiStrCmp (Record, "SFBW1|0") != 0) {
+    /* 旧版本没有该记录，只有完整的有效开启值才能启用提示。 */
+    if (AsciiStrnCmp (Record, "SFBW", 4) == 0) {
+      return EFI_VOLUME_CORRUPTED;
+    }
+    DEBUG ((EFI_D_INFO, "SFB: boot warning setting absent, default off\n"));
+  }
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS
+SfbSaveBootWarning (IN BOOLEAN Enabled)
+{
+  return SfbStoreWrite (SFB_STORE_WARNING, Enabled ? "SFBW1|1" : "SFBW1|0");
+}

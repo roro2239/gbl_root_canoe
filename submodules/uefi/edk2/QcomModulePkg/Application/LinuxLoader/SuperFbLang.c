@@ -69,6 +69,11 @@ STATIC CONST SFB_LANG_STRING mSfbStrings[StrCount] = {
   { L"Real BL state: locked", L"真实 BL 状态：已锁定" },
   { L"Real BL state: unlocked", L"真实 BL 状态：已解锁" },
   { L"Real BL state: unknown (0x%lx)", L"真实 BL 状态：未知 (0x%lx)" },
+  { L"Boot warning: on", L"开机提示：开" },
+  { L"Boot warning: off", L"开机提示：关" },
+  { L"Boot warning: read failed", L"开机提示：读取失败" },
+  { L"Could not save boot warning setting", L"开机提示设置保存失败" },
+  { L"Could not apply boot warning setting", L"无法应用开机提示设置" },
 };
 
 CONST CHAR16 *

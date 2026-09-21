@@ -79,7 +79,8 @@ typedef enum {
   /* Power management actions offered at the end of the menu and on the
    * fastboot mode screen. */
   SfbEntryPowerOff,
-  SfbEntryRestart
+  SfbEntryRestart,
+  SfbEntryBootWarning
 } SFB_ENTRY_KIND;
 
 typedef struct {
@@ -215,16 +216,24 @@ SfbGetVolumeLabel (IN EFI_FILE_PROTOCOL *Root,
 /* ---- SuperFbStore.c: settings kept in the tail of the ESP ---------------- */
 
 /*
- * The firmware on this platform rejects variables it does not know, so the two
- * things the menu has to remember outlive a reboot in the EFI System Partition
- * instead: two 1 KiB NUL-padded ASCII records written to the very end of the
- * partition, which is the only part of it that is safe to touch.
+ * 固件拒绝未知 EFI 变量，因此设置存于分区尾部的 1 KiB ASCII 记录。
+ * 新增提示设置放在旧记录之前，默认项和自定义项仍位于末尾 2 KiB。
  */
 #define SFB_STORE_SLOT_BYTES  1024
-#define SFB_STORE_SLOTS       2
+#define SFB_STORE_SLOTS       3
 
-#define SFB_STORE_DEFAULT  0   /* the entry the menu timeout launches */
-#define SFB_STORE_CUSTOM   1   /* the single user-added menu entry */
+#define SFB_STORE_WARNING  0
+#define SFB_STORE_DEFAULT  1   /* the entry the menu timeout launches */
+#define SFB_STORE_CUSTOM   2   /* the single user-added menu entry */
+
+EFI_STATUS
+SfbLoadBootWarning (OUT BOOLEAN *Enabled);
+
+EFI_STATUS
+SfbSaveBootWarning (IN BOOLEAN Enabled);
+
+EFI_STATUS
+SfbReadBlState (OUT BOOLEAN *Unlocked);
 
 /*
  * Replace one record. Text is NUL-terminated ASCII of at most
