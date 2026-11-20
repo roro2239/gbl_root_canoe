@@ -94,12 +94,8 @@ AtDevInfoWrite (
 /* ---- confirmation ------------------------------------------------------- */
 
 /**
-  Show Title + Warning and require one deliberate confirmation. A 1s stall and
-  input flush precede the prompt so the power press that selected the action in
-  the menu cannot bleed through and auto-confirm: the user must release and
-  press again. Volume keys cancel.
-
-  Returns TRUE only on a fresh power press.
+  显示操作警告并要求三次确认，每步间隔一秒并清理按键缓冲。
+  音量键或输入失败取消操作，只有三次确认完成才允许写入。
 **/
 STATIC
 BOOLEAN
@@ -109,21 +105,31 @@ BlConfirm (
   )
 {
   AT_KEY Key;
+  UINTN Step;
+  EFI_STATUS Status;
+  CHAR16 Progress[24];
 
-  /* 1s: let the selecting key release, then drop anything held over so it
-   * cannot confirm the prompt the instant it appears. */
-  gBS->Stall (1000000);
-  gST->ConIn->Reset (gST->ConIn, FALSE);
+  for (Step = 1; Step <= 3; Step++) {
+    AtUiBeginScreen (Title, NULL);
+    AtUiDrawNote ((Warning != NULL) ? Warning : L"");
+    UnicodeSPrint (Progress, sizeof (Progress), L"确认 %u/3", (UINT32)Step);
+    AtUiDrawNote (Progress);
+    AtUiEndScreen (L"电源键确认，音量键取消");
 
-  AtUiBeginScreen (Title, NULL);
-  AtUiDrawNote ((Warning != NULL) ? Warning : L"");
-  AtUiEndScreen (L"电源键确认，音量键取消");
-
-  Key = AtUiWaitForKey (0);
-  if (Key != AtKeySelect) {
-    AtUiShowMessage (L"已取消");
-    gBS->Stall (1000000);
-    return FALSE;
+    Status = gBS->Stall (1000000);
+    if (!EFI_ERROR (Status)) {
+      Status = gST->ConIn->Reset (gST->ConIn, FALSE);
+    }
+    if (EFI_ERROR (Status)) {
+      AtUiReportStatus (L"准备确认按键失败", Status);
+      return FALSE;
+    }
+    Key = AtUiWaitForKey (0);
+    if (Key != AtKeySelect) {
+      AtUiShowMessage (L"已取消");
+      gBS->Stall (1000000);
+      return FALSE;
+    }
   }
   return TRUE;
 }

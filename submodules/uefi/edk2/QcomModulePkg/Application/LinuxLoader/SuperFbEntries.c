@@ -675,6 +675,12 @@ SfbLaunchEntry (IN CONST SFB_BOOT_ENTRY *Entry,
     return EFI_NOT_FOUND;
   }
 
+  if (ClearScreen && SfbIsAndroidBootEntry (&Entry->Spec)) {
+    if (!SfbConfirmBootMode (Entry)) {
+      return EFI_ABORTED;
+    }
+  }
+
   /*
    * Announce the launch: "Booting <name>". Clearing the screen first is only
    * done for a menu-driven launch; an unattended boot leaves the screen (e.g.

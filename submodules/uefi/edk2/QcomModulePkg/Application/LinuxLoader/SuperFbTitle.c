@@ -15,8 +15,9 @@ STATIC CONST struct {
   CONST CHAR16 *Path;
   CONST CHAR16 *Caption;
 } mBundledEntries[] = {
-  { L"Android", L"Boot Modes\\Android", L"\\efisp\\boot.efi", L"Android 系统" },
-  { L"Android backup", L"Boot Modes\\Android backup", L"\\efisp\\boot_backup.efi", L"Android 备用系统" },
+  { L"Android", L"Boot Modes\\Android", L"\\efisp\\boot.efi", L"启动 Android（假回锁）" },
+  { L"Android (Real State)", L"Boot Modes\\Android (Real State)", L"\\efisp\\boot_normal.efi", L"启动 Android（真实状态）" },
+  { L"Android backup", L"Boot Modes\\Android backup", L"\\efisp\\boot_backup.efi", L"启动 Android（备份）" },
   { L"Android Tools\\Reboot Tools", NULL, L"\\efisp\\tools\\RebootTools.efi", L"重启工具" },
   { L"Android Tools\\BL Tools", NULL, L"\\efisp\\tools\\BLTools.efi", L"BL 锁状态工具" },
   { L"Android Tools\\ARB Tools", NULL, L"\\efisp\\tools\\ArbTools.efi", L"ARB 工具" }
@@ -32,6 +33,41 @@ SfbFindBundledEntry (IN CONST SFB_ENTRY_SPEC *Spec)
          (mBundledEntries[Index].MenuName != NULL &&
           StrCmp (Spec->Name, mBundledEntries[Index].MenuName) == 0)) &&
         SfbEntryPathEqual (Spec->Path, mBundledEntries[Index].Path)) {
+      return Index;
+    }
+  }
+  return SFB_NO_INDEX;
+}
+
+SFB_BOOT_MODE
+SfbGetBootMode (IN CONST SFB_ENTRY_SPEC *Spec)
+{
+  UINTN Index;
+
+  /* 按路径识别，使改名入口和文件选择器也经过同一启动确认。 */
+  for (Index = 0; Index < 3; Index++) {
+    if (SfbEntryPathEqual (Spec->Path, mBundledEntries[Index].Path)) {
+      return (SFB_BOOT_MODE)(SfbBootModeFakeLocked + Index);
+    }
+  }
+  return SfbBootModeOther;
+}
+
+BOOLEAN
+SfbIsAndroidBootEntry (IN CONST SFB_ENTRY_SPEC *Spec)
+{
+  return (BOOLEAN)(SfbGetBootMode (Spec) != SfbBootModeOther);
+}
+
+UINTN
+SfbDefaultBootModeIndex (IN CONST SFB_ENTRY_LIST *List)
+{
+  UINTN Index;
+  SFB_BOOT_MODE Mode;
+
+  for (Index = 0; Index < List->Count; Index++) {
+    Mode = SfbGetBootMode (&List->Entry[Index].Spec);
+    if (Mode == SfbBootModeFakeLocked || Mode == SfbBootModeRealState) {
       return Index;
     }
   }

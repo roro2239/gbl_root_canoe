@@ -253,6 +253,46 @@ SfbShowActionScreen (IN CONST CHAR16 *Text)
 
 /* ---- shared screens ------------------------------------------------------- */
 
+BOOLEAN
+SfbConfirmBootMode (IN CONST SFB_BOOT_ENTRY *Entry)
+{
+  UINTN Step;
+  EFI_STATUS Status;
+  SFB_KEY Key;
+  CHAR16 Progress[24];
+
+  for (Step = 1; Step <= 3; Step++) {
+    SfbBeginScreen (L"确认启动方式",
+                    SfbEntryDisplayName (&Entry->Spec, Entry->Spec.Name));
+    SfbDrawRow (FALSE, L" ", L"警告：切换启动状态可能导致");
+    SfbDrawRow (FALSE, L" ", L"数据无法解密，需要格式化");
+    SfbDrawRow (FALSE, L" ", L"并清除数据。请先备份重要数据。");
+    UnicodeSPrint (Progress, sizeof (Progress), L"确认 %u/3", (UINT32)Step);
+    AtUiDrawNote (Progress);
+    SfbEndScreen (L"电源键确认，音量键取消");
+
+    /* 每步显示后等待一秒，再丢弃遗留按键，防止选择键穿透。 */
+    Status = gBS->Stall (1000000);
+    if (!EFI_ERROR (Status)) {
+      Status = gST->ConIn->Reset (gST->ConIn, FALSE);
+    }
+    if (EFI_ERROR (Status)) {
+      SfbReportStatus (L"准备确认按键失败", Status);
+      return FALSE;
+    }
+    Key = SfbWaitForKey (0);
+    if (Key != SfbKeySelect) {
+      if (Key == SfbKeyTimeout) {
+        SfbReportStatus (L"读取确认按键失败", EFI_DEVICE_ERROR);
+      } else if (Key == SfbKeyUp || Key == SfbKeyDown) {
+        SfbDebounceMenuExit ();
+      }
+      return FALSE;
+    }
+  }
+  return TRUE;
+}
+
 VOID
 SfbShowEnteringScreen (IN CONST CHAR16 *What)
 {
@@ -386,6 +426,7 @@ VOID
 SfbDrawMenu (IN CONST SFB_MENU_ROW *Rows,
              IN UINTN              Count,
              IN UINTN              Cursor,
+             IN UINTN              DefaultBootMode,
              IN CONST CHAR16       *Title OPTIONAL)
 {
   UINTN   Start;
@@ -409,7 +450,9 @@ SfbDrawMenu (IN CONST SFB_MENU_ROW *Rows,
                      (Rows[Index].FolderCaption != NULL) ? Rows[Index].FolderCaption : Rows[Index].Text);
       SfbDrawRow ((BOOLEAN)(Index == Cursor), L" ", Text);
     } else {
-      SfbDrawRow ((BOOLEAN)(Index == Cursor), L" ", Rows[Index].Text);
+      SfbDrawRow ((BOOLEAN)(Index == Cursor),
+                  (Rows[Index].Kind == SfbRowEntry && Rows[Index].Entry == DefaultBootMode)
+                    ? L"✓" : L" ", Rows[Index].Text);
     }
   }
 
@@ -437,7 +480,7 @@ SfbShowEnteringMenu (VOID)
   }
   /* 启动流程已加载启动项，先显示完整缓存菜单，再等待按键释放和卷刷新。 */
   Count = SfbBuildRows (List, L"", Rows);
-  SfbDrawMenu (Rows, Count, 0, NULL);
+  SfbDrawMenu (Rows, Count, 0, SfbDefaultBootModeIndex (List), NULL);
   FreePool (Rows);
   if (EFI_ERROR (AtUiScreenStatus ())) {
     return;
@@ -493,7 +536,7 @@ SfbRunMenuLevel (IN CONST CHAR16 *Prefix, IN UINTN Depth, IN CONST CHAR16 *Title
       Rebuild = FALSE;
     }
 
-    SfbDrawMenu (Rows, Count, Cursor, Title);
+    SfbDrawMenu (Rows, Count, Cursor, SfbDefaultBootModeIndex (List), Title);
 
     /* The menu is purely interactive: it waits for a key indefinitely and
      * never launches anything unattended. */
@@ -559,7 +602,7 @@ SfbRunMenuLevel (IN CONST CHAR16 *Prefix, IN UINTN Depth, IN CONST CHAR16 *Title
     case SfbRowEntry:
     default:
       Status = SfbLaunchEntry (&List->Entry[Rows[Cursor].Entry], TRUE, NULL);
-      if (EFI_ERROR (Status)) {
+      if (EFI_ERROR (Status) && Status != EFI_ABORTED) {
         SfbReportStatus (L"启动失败", Status);
       }
       Rebuild = TRUE;

@@ -478,3 +478,4 @@ async function init() {
 }
 
 init();
+getKsuBridge()?.fullScreen?.(true);

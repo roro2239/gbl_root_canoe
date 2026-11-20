@@ -387,7 +387,7 @@ SfbEfiActionMenu (IN EFI_HANDLE   Volume,
     if (Cursor == 0) {
       /* Menu-driven launch, so clear the screen for the "Booting" banner. */
       Status = SfbLaunchEntry (&Entry, TRUE, NULL);
-      if (EFI_ERROR (Status)) {
+      if (EFI_ERROR (Status) && Status != EFI_ABORTED) {
         SfbReportStatus (L"启动失败", Status);
       }
       continue;

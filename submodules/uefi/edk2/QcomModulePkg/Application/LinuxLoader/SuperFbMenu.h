@@ -187,6 +187,7 @@ SfbMakeFileEntry (IN EFI_HANDLE        Volume,
  * ClearScreen controls the "Booting <name>" banner: TRUE clears the screen
  * first (menu-driven launch), FALSE leaves the current screen contents in place
  * (unattended boot, which must not blank the boot splash).
+ * 手动启动 Android 需三次确认，取消返回 EFI_ABORTED。
  */
 EFI_STATUS
 SfbLaunchEntry (IN CONST SFB_BOOT_ENTRY *Entry,
@@ -275,6 +276,26 @@ extern CONST CHAR16 gSfbRootTitle[];
 
 EFI_STATUS
 SfbReadBlState (OUT BOOLEAN *Unlocked);
+
+typedef enum {
+  SfbBootModeOther = 0,
+  SfbBootModeFakeLocked,
+  SfbBootModeRealState,
+  SfbBootModeBackup
+} SFB_BOOT_MODE;
+
+SFB_BOOT_MODE
+SfbGetBootMode (IN CONST SFB_ENTRY_SPEC *Spec);
+
+BOOLEAN
+SfbIsAndroidBootEntry (IN CONST SFB_ENTRY_SPEC *Spec);
+
+/* 启动顺序中首个假回锁或真实状态入口；备份不作为默认方式。 */
+UINTN
+SfbDefaultBootModeIndex (IN CONST SFB_ENTRY_LIST *List);
+
+BOOLEAN
+SfbConfirmBootMode (IN CONST SFB_BOOT_ENTRY *Entry);
 
 CONST CHAR16 *
 SfbEntryMenuName (IN CONST SFB_ENTRY_SPEC *Spec);
