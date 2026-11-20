@@ -6,7 +6,7 @@ int32_t patch_abl_gbl(char* buffer, int32_t size) {
     char target[]      = { 'e',0, 'f',0, 'i',0, 's',0, 'p',0 };
     char replacement[] = { 'n',0, 'u',0, 'l',0, 'l',0, 's',0 };
     int32_t target_len = sizeof(target);
-    for (int32_t i = 0; i < size - target_len; ++i) {
+    for (int32_t i = 0; i <= size - target_len; ++i) {
         if (memcmp(buffer + i, target, target_len) == 0) {
             memcpy(buffer + i, replacement, target_len);
             return 0;
@@ -28,12 +28,13 @@ int16_t Patched[] = {
     -1, -1, -1, -1, -1, -1, -1, -1
 };
 
-int32_t patch_abl_bootstate(char* buffer, int32_t size,
-                          int8_t* lock_register_num, int32_t* offset) {
+static int32_t patch_abl_bootstate(char* buffer, int32_t size,
+                                 int8_t* lock_register_num, int32_t* offset,
+                                 bool apply) {
     int32_t pattern_len = sizeof(Original) / sizeof(int16_t);
     int32_t patched_count = 0;
     if (size < pattern_len) return 0;
-    for (int32_t i = 0; i <= size - pattern_len; ++i) {
+    for (int32_t i = 0; i <= size - pattern_len; i += 4) {
         bool match = true;
         for (int32_t j = 0; j < pattern_len; ++j) {
             if (Original[j] != -1 && (uint8_t)buffer[i + j] != (uint8_t)Original[j]) {
@@ -44,11 +45,13 @@ int32_t patch_abl_bootstate(char* buffer, int32_t size,
             *lock_register_num = (int8_t)((uint8_t)buffer[i] & 0x1F);
             *offset = i;
             #ifndef DISABLE_PATCH_3
-            for (int32_t j = 0; j < pattern_len; ++j)
-                if (Patched[j] != -1) buffer[i + j] = (char)Patched[j];
+            if (apply) {
+                for (int32_t j = 0; j < pattern_len; ++j)
+                    if (Patched[j] != -1) buffer[i + j] = (char)Patched[j];
+            }
             #endif
             patched_count++;
-            i += pattern_len - 1;
+            i += pattern_len - 4;
         }
     }
     return patched_count;
@@ -96,7 +99,7 @@ int32_t source_callback(char* buffer, int32_t size, int32_t now_offset, int8_t c
     #endif
     #ifndef DISABLE_PATCH_5
     int32_t fwd = track_forward_patch_strb(buffer, size, now_offset, current_target, anchor_offset);
-    if (fwd <= 0) {
+    if (fwd != SUCCESS) {
         printf("Warning: sink STRB not found after anchor 0x%X\n", anchor_offset);
         return -1;
     }
@@ -173,7 +176,32 @@ int32_t patch_adrl_unlocked_to_locked(char* buffer, int32_t size, uint64_t load_
 
 #include "patchs/oplus/warning.h"
 #include "patchs/oplus/forceenablefastboot.h"
-bool PatchBuffer(char* data, int32_t size) {
+static bool patch_buffer_inplace(char* data, int32_t size, PatchMode mode, bool fix_fastboot) {
+    if (mode == PATCH_MODE_NORMAL) {
+        /* 先只读定位原始状态链，防止把假回锁产物当作透传模式的输入。 */
+        int32_t offset = -1;
+        int8_t lock_register_num = -1;
+        int32_t num_patches = patch_abl_bootstate(data, size, &lock_register_num, &offset, false);
+        if (num_patches != 1) {
+            printf("错误：真实状态模式需要唯一的原始启动状态锚点，实际找到 %d 处。\n", num_patches);
+            return false;
+        }
+        int32_t global_var_offset = -1;
+        if (find_ldrB_instructio_reverse(data, size, offset, lock_register_num,
+                                        &global_var_offset, empty_source_callback) != SUCCESS) {
+            printf("错误：无法定位原始 BL 状态来源。\n");
+            return false;
+        }
+        if (patch_abl_gbl(data, size) != 0)
+            printf("Warning: Failed to patch ABL GBL\n");
+        if (!patch_warning(data, size, global_var_offset))
+            printf("提示：未应用 OPlus 去黄字补丁。\n");
+        if (fix_fastboot && patch_fastboot(data, size) == FASTBOOT_PATCH_ERROR)
+            return false;
+        printf("真实状态模式：保留原始 BL 状态、验证状态及状态读写指令。\n");
+        return true;
+    }
+
     if (patch_abl_gbl(data, size) != 0)
         printf("Warning: Failed to patch ABL GBL\n");
 
@@ -189,7 +217,7 @@ bool PatchBuffer(char* data, int32_t size) {
     }
     int32_t offset = -1;
     int8_t lock_register_num = -1;
-    int32_t num_patches = patch_abl_bootstate(data, size, &lock_register_num, &offset);
+    int32_t num_patches = patch_abl_bootstate(data, size, &lock_register_num, &offset, true);
     if (num_patches == 0) {
         printf("Error: Failed to find/patch ABL Boot State\n");
         return 0;
@@ -212,11 +240,33 @@ bool PatchBuffer(char* data, int32_t size) {
         printf("OPlus Warning: patch_warning failed\n");
     }
 
-    //force enable fastboot for unofficially unlock
-    if (!patch_fastboot(data, size, global_var_offset)) {
-        printf("OPlus Warning: patch_fastboot failed\n");
+    if (fix_fastboot && patch_fastboot(data, size) == FASTBOOT_PATCH_ERROR) {
+        return false;
     }
     // ==========================================================
 
     return 1;
+}
+
+bool PatchBufferWithMode(char* data, int32_t size, PatchMode mode, bool fix_fastboot) {
+    if (data == NULL || size <= 0 ||
+        (mode != PATCH_MODE_NORMAL && mode != PATCH_MODE_FAKE_LOCKED)) return false;
+    char* pending = malloc((size_t)size);
+    if (pending == NULL) {
+        printf("错误：无法分配补丁缓冲区。\n");
+        return false;
+    }
+    memcpy(pending, data, (size_t)size);
+    bool result = patch_buffer_inplace(pending, size, mode, fix_fastboot);
+    if (result) memcpy(data, pending, (size_t)size);
+    free(pending);
+    return result;
+}
+
+bool PatchBufferEx(char* data, int32_t size, bool fix_fastboot) {
+    return PatchBufferWithMode(data, size, PATCH_MODE_FAKE_LOCKED, fix_fastboot);
+}
+
+bool PatchBuffer(char* data, int32_t size) {
+    return PatchBufferEx(data, size, true);
 }

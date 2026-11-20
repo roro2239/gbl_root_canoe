@@ -1,5 +1,7 @@
 #!/system/bin/sh
 
+. "$MODPATH/bin/boot_modes.sh"
+
 system_locale=$(getprop persist.sys.locale 2>/dev/null)
 [ -n "$system_locale" ] || system_locale=$(getprop ro.product.locale 2>/dev/null)
 case "$system_locale" in
@@ -16,19 +18,10 @@ esac
 echo "$LANG" > "$MODPATH/lang.txt"
 ksud module config set user_lang "$LANG" 2>/dev/null
 
-cat > "$MODPATH/module.prop" <<EOF
-id=fake_bl_efisp
-version=5.0
-versionCode=12
-author=zaomi
-EOF
-
-if [ "$LANG" = "zh" ]; then
-  echo "name=假回锁" >> "$MODPATH/module.prop"
-  echo "description=自动刷新bl相关分区到非活动槽位" >> "$MODPATH/module.prop"
-else
-  echo "name=Fake BL EFISP" >> "$MODPATH/module.prop"
-  echo "description=Automatically flash BL-related partitions to inactive slot" >> "$MODPATH/module.prop"
+if [ "$LANG" = "en" ]; then
+  sed -i -e 's/^name=.*/name=Fake BL EFISP/' \
+    -e 's/^description=.*/description=Automatically flash BL-related partitions to inactive slot/' \
+    "$MODPATH/module.prop" || abort "Failed to localize module.prop"
 fi
 
 if [ "$LANG" = "zh" ]; then
@@ -216,13 +209,13 @@ while true; do
       abort "slot detection failed"
     fi
     abl_part="$BY_NAME_DIR/abl$current_slot"
-    $MODPATH/bin/extractfv -o $RUNTIME_DIR -v "$abl_part" >> $RUNTIME_DIR/extract.log 2>&1
-    $MODPATH/bin/patch_abl $RUNTIME_DIR/LinuxLoader.efi $RUNTIME_DIR/patched.efi >> $RUNTIME_DIR/patch.log 2>&1
-    if [ ! -f $RUNTIME_DIR/patched.efi ]; then
+    rm -f "$RUNTIME_DIR/LinuxLoader.efi" || abort "runtime cleanup failed"
+    if ! "$MODPATH/bin/extractfv" -o "$RUNTIME_DIR" -v "$abl_part" >> "$RUNTIME_DIR/extract.log" 2>&1 ||
+       ! build_boot_modes "$MODPATH/bin/patch_abl" "$RUNTIME_DIR/LinuxLoader.efi" "$RUNTIME_DIR"; then
       ui_print "$T_PATCH_FAIL"
       abort "patch failed"
     fi
-    if grep -q "Warning: Failed to patch ABL GBL" $RUNTIME_DIR/patch.log; then
+    if grep -q "Warning: Failed to patch ABL GBL" "$RUNTIME_DIR/patch.log"; then
       ui_print "$T_NO_GBL"
       ui_print "$T_ABLREPO_CONFIRM"
       ui_print "$T_ABLREPO_CONFIRM_YES"
@@ -268,8 +261,7 @@ while true; do
       abort "persist not mounted"
     fi
     mkdir -p "$EFISP_DIR" || { ui_print "$T_EFISP_DIR_FAIL"; abort "efisp mkdir failed"; }
-    [ -f "$EFISP_DIR/boot.efi" ] && mv "$EFISP_DIR/boot.efi" "$EFISP_DIR/boot_backup.efi"
-    if ! cp $RUNTIME_DIR/patched.efi "$EFISP_DIR/boot.efi"; then
+    if ! install_boot_modes "$RUNTIME_DIR" "$EFISP_DIR" yes; then
       ui_print "$T_EFISP_WRITE_FAIL"
       abort "efisp write failed"
     fi

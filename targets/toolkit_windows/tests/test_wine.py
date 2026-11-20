@@ -5,7 +5,9 @@ import argparse
 import hashlib
 import os
 from pathlib import Path
+import re
 import shutil
+import struct
 import subprocess
 import tempfile
 
@@ -28,6 +30,72 @@ def run(args, *, cwd, env=None, expected=0, timeout=60):
     return result
 
 
+def normal_fixture(patcher, source, patched, fake_log, out):
+    original = source.read_bytes()
+    normal_path = out / "normal.efi"
+    result = run([patcher, source, normal_path, "normal"], cwd=out)
+    normal = normal_path.read_bytes()
+    assert len(normal) == len(original)
+
+    # 独立核对真实模式保留状态字符串、状态读取、计算和写回指令。
+    for pattern, length in (
+        (r"Anchor offset : 0x([0-9A-F]+)", 32),
+        (r"Found source LDRB at 0x([0-9A-F]+)", 4),
+        (r"0x([0-9A-F]+): STRB .*SINK", 4),
+        (r"Found ADRL triple at 0x([0-9A-F]+)", 8),
+    ):
+        match = re.search(pattern, fake_log)
+        assert match, fake_log
+        offset = int(match[1], 16)
+        assert normal[offset:offset + length] == original[offset:offset + length]
+        assert patched[offset:offset + length] != original[offset:offset + length]
+
+    expected = bytearray(original)
+    gbl = original.find("efisp".encode("utf-16le"))
+    if gbl >= 0:
+        expected[gbl:gbl + 10] = "nulls".encode("utf-16le")
+    warning = re.search(r"Patched CBZ at 0x([0-9A-F]+) to use WZR", result.stdout)
+    if warning:
+        offset = int(warning[1], 16)
+        instruction = struct.unpack_from("<I", original, offset)[0]
+        struct.pack_into("<I", expected, offset, (instruction & ~31) | 31)
+    fastboot = re.search(r"\[fastboot:applied\].*?0x([0-9A-F]+)", result.stdout)
+    if fastboot:
+        offset = int(fastboot[1], 16)
+        struct.pack_into("<I", expected, offset, 0x14000007)
+        assert normal[offset:offset + 4] == patched[offset:offset + 4]
+    assert normal == expected, "真实状态模式改动了状态透传以外的指令"
+
+    explicit_fake = out / "explicit-fake.efi"
+    run([patcher, source, explicit_fake, "fake_locked"], cwd=out)
+    assert explicit_fake.read_bytes() == patched, "旧 CLI 默认行为发生变化"
+    failed = out / "failed.efi"
+    failed.write_bytes(b"previous-output")
+    run([patcher, explicit_fake, failed, "normal"], cwd=out, expected=1)
+    assert failed.read_bytes() == b"previous-output"
+    for options in (["invalid"], ["normal", "fake_locked"], ["--defer-fastboot", "--defer-fastboot"]):
+        run([patcher, source, failed, *options], cwd=out, expected=1)
+        assert failed.read_bytes() == b"previous-output"
+
+    deferred_outputs = {}
+    for options, content in (
+        (["normal", "--defer-fastboot"], normal),
+        (["--defer-fastboot", "normal"], normal),
+        (["--defer-fastboot"], patched),
+    ):
+        deferred = out / "deferred.efi"
+        run([patcher, source, deferred, *options], cwd=out)
+        expected_deferred = bytearray(content)
+        if fastboot:
+            offset = int(fastboot[1], 16)
+            expected_deferred[offset:offset + 4] = original[offset:offset + 4]
+        assert deferred.read_bytes() == expected_deferred
+        deferred_outputs["normal" if "normal" in options else "fake_locked"] = deferred.read_bytes()
+    assert source.read_bytes() == original
+    # 工具包保留原始 FB 分支，交给 BDS 的启动开关处理。
+    return deferred_outputs["fake_locked"], deferred_outputs["normal"]
+
+
 def native_fixtures(work):
     extractor = work / "extractfv"
     patcher = work / "patch_abl"
@@ -48,7 +116,8 @@ def native_fixtures(work):
         assert len(original) == len(patched), f"{source}: patcher changed image size"
         if source.parent.name == "myron":
             assert hashlib.md5(original).hexdigest() == "993388c4312750c9bfd0df8aae8f1e11"
-        cases.append((source.parent.name, source.read_bytes(), original, patched, WARNING in result.stdout))
+        patched, normal = normal_fixture(patcher, out / "LinuxLoader.efi", patched, result.stdout, out)
+        cases.append((source.parent.name, source.read_bytes(), original, patched, normal, WARNING in result.stdout))
         print(f"PASS native: {source.parent.name}", flush=True)
     assert cases, "No checked-in ABL fixtures found"
 
@@ -62,7 +131,9 @@ def native_fixtures(work):
     source.write_bytes(no_gbl)
     result = run([patcher, source, work / "no_gbl_patched.efi"], cwd=work)
     assert WARNING in result.stdout, "Missing GBL warning in native reference"
-    cases.append(("no-gbl", no_gbl, no_gbl, (work / "no_gbl_patched.efi").read_bytes(), True))
+    patched = (work / "no_gbl_patched.efi").read_bytes()
+    patched, normal = normal_fixture(patcher, source, patched, result.stdout, work)
+    cases.append(("no-gbl", no_gbl, no_gbl, patched, normal, True))
     print("PASS native: no-gbl warning fixture", flush=True)
     return cases
 
@@ -92,12 +163,13 @@ def wine_cases(work, toolkit, cases):
             return run([wine, "cmd", "/d", "/v:on", "/c", "build.bat"],
                        cwd=kit, env=env, expected=None)
 
-        for name, image, original, patched, no_gbl in cases:
+        for name, image, original, patched, normal, no_gbl in cases:
             (kit / "images/abl.img").write_bytes(image)
             result = batch()
             assert result.returncode == 0, f"{name}:\n{result.stdout}"
             assert (kit / "ABL_original.efi").read_bytes() == original, name
             assert (kit / "efisp/boot.efi").read_bytes() == patched, name
+            assert (kit / "efisp/boot_normal.efi").read_bytes() == normal, name
             assert "Patched. Outputs:" in result.stdout, result.stdout
             # Wine 10 reads batch files using the OEM code page even after
             # chcp 65001. Check English guidance; console rendering is separate.
@@ -114,6 +186,7 @@ def wine_cases(work, toolkit, cases):
         assert result.returncode != 0, result.stdout
         assert "extractfv produced no LinuxLoader.efi" in result.stdout, result.stdout
         assert not (kit / "efisp/boot.efi").exists()
+        assert not (kit / "efisp/boot_normal.efi").exists()
         assert not (kit / "ABL_original.efi").exists()
         assert not (kit / "patch_log.txt").exists()
         assert "Patched. Outputs:" not in result.stdout, result.stdout
@@ -129,6 +202,7 @@ def wine_cases(work, toolkit, cases):
         result = batch()
         assert result.returncode != 0 and "ERROR: patch_abl failed" in result.stdout, result.stdout
         assert not (kit / "efisp/boot.efi").exists()
+        assert not (kit / "efisp/boot_normal.efi").exists()
         assert "Patched. Outputs:" not in result.stdout, result.stdout
         print("PASS Wine: unsupported PE fails patching", flush=True)
 

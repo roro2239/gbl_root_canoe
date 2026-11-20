@@ -23,8 +23,6 @@
 #define ARRAY_SIZE(a)  (sizeof (a) / sizeof ((a)[0]))
 #endif
 
-#define AT_SCREEN_LINES  (AT_VISIBLE_ROWS + 6)
-
 STATIC MENU_SCREEN mScreen;
 STATIC EFI_STATUS  mDrawStatus;
 STATIC UINTN       mNextRow;
@@ -79,7 +77,7 @@ ShowBanner (IN CONST CHAR16 *Text, IN BOOLEAN ClearScreen, IN BOOLEAN TopAligned
     MenuScreenClose (&mScreen);
   }
   if (mScreen.Lines == 0) {
-    mDrawStatus = MenuScreenOpen (&mScreen, (mStatusLine != NULL) ? 9 : 7, AT_SCREEN_LINES);
+    mDrawStatus = MenuScreenOpen (&mScreen, (mStatusLine != NULL) ? 9 : 7, MAX_UINTN);
   }
   if (!EFI_ERROR (mDrawStatus) && ClearScreen) {
     mDrawStatus = MenuScreenClear (&mScreen);
@@ -234,7 +232,7 @@ AtUiBeginScreen (
     DrawLine (mNextRow++, MenuLineHint, Subtitle, MAX_UINTN);
   }
   /* 状态开启时，额外保留状态行和底部留白。 */
-  mVisibleRows = MIN (AT_VISIBLE_ROWS, mScreen.Lines - mNextRow - ((mStatusLine != NULL) ? 5 : 3));
+  mVisibleRows = mScreen.Lines - mNextRow - ((mStatusLine != NULL) ? 5 : 3);
 }
 
 VOID

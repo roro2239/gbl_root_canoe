@@ -4,6 +4,8 @@ set -e
 SCRIPTDIR=$(dirname "$0")
 cd "$SCRIPTDIR"
 
+rm -f ./LinuxLoader.efi ./efisp/boot.efi.pending ./efisp/boot_normal.efi.pending
+trap 'rm -f ./efisp/boot.efi.pending ./efisp/boot_normal.efi.pending' EXIT
 ./bin/extractfv -o ./ ./images/abl.img || { echo "ERROR: extractfv failed"; exit 1; }
 if [ ! -f ./LinuxLoader.efi ]; then
   echo "ERROR: extractfv produced no LinuxLoader.efi"
@@ -11,16 +13,21 @@ if [ ! -f ./LinuxLoader.efi ]; then
 fi
 
 mv ./LinuxLoader.efi ./ABL_original.efi
-if ! ./bin/patch_abl ./ABL_original.efi ./efisp/boot.efi > ./patch_log.txt 2>&1; then
-  cat ./patch_log.txt
-  echo "ERROR: patch_abl failed"
-  exit 1
-fi
+: > ./patch_log.txt
+for mode in fake_locked normal; do
+  case "$mode" in
+    fake_locked) output=./efisp/boot.efi.pending ;;
+    normal) output=./efisp/boot_normal.efi.pending ;;
+  esac
+  if ! ./bin/patch_abl ./ABL_original.efi "$output" "$mode" --defer-fastboot >> ./patch_log.txt 2>&1 || [ ! -s "$output" ]; then
+    cat ./patch_log.txt
+    echo "错误：$mode 生成失败"
+    exit 1
+  fi
+done
 cat ./patch_log.txt
-if [ ! -f ./efisp/boot.efi ]; then
-  echo "ERROR: patch_abl produced no efisp/boot.efi"
-  exit 1
-fi
+mv ./efisp/boot_normal.efi.pending ./efisp/boot_normal.efi
+mv ./efisp/boot.efi.pending ./efisp/boot.efi
 
 if grep -q "Warning: Failed to patch ABL GBL" ./patch_log.txt; then
   gbl_ok=no
@@ -37,6 +44,7 @@ fi
 echo ""
 echo "========================================"
 echo "Patched. Outputs:"
+echo "  efisp/boot_normal.efi - 原始 BL 真实状态透传"
 echo "  efisp/boot.efi     - cracked ABL loader (fake re-lock), the ANDROID boot entry"
 echo "  ENTRIES.CFG        - boot entry list (copy to the persist volume root)"
 echo "  efisp/tools/       - tools submenu (Reboot / BL / ARB tools)"

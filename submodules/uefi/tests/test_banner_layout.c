@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #undef NULL
 #include <AndroidToolsUi.h>
@@ -23,6 +24,7 @@ static UINTN FooterRow;
 static UINTN MinimumLines;
 static CONST CHAR16 StatusText[] = L"BL 真实状态：已解锁";
 static CONST CHAR16 FooterText[] = L"音量键移动，电源键确认";
+static CONST CHAR16 SubtitleText[] = L"菜单说明";
 static UINTN StallCount;
 static UINTN ResetCount;
 static UINTN ReadCount;
@@ -30,34 +32,77 @@ static EFI_STATUS ResetStatus;
 static EFI_BOOT_SERVICES BootServices;
 static EFI_SYSTEM_TABLE SystemTable;
 static EFI_SIMPLE_TEXT_INPUT_PROTOCOL Input;
+static EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL Output;
+static EFI_SIMPLE_TEXT_OUTPUT_MODE OutputMode;
 EFI_BOOT_SERVICES *gBS = &BootServices;
 EFI_SYSTEM_TABLE *gST = &SystemTable;
+EFI_GUID gEfiGraphicsOutputProtocolGuid;
 
-EFI_STATUS MenuScreenOpen (MENU_SCREEN *Screen, UINTN MinLines, UINTN MaxLines) {
-  assert (MinLines <= MaxLines);
-  MinimumLines = MinLines;
-  Screen->Graphics = UseGraphics ? &Graphics : NULL;
-  Screen->GraphicsMode = Mode.Mode;
-  Screen->Lines = MaxLines;
-  Screen->Top = UseGraphics ? Info.VerticalResolution / 4 : 8;
-  CurrentScreen = Screen;
+VOID *EFIAPI AllocatePool (UINTN Size) { return malloc (Size); }
+VOID EFIAPI FreePool (VOID *Buffer) { free (Buffer); }
+VOID *EFIAPI ZeroMem (VOID *Buffer, UINTN Size) { return memset (Buffer, 0, Size); }
+
+static EFI_STATUS EFIAPI locate_graphics (EFI_GUID *Guid, VOID *Registration, VOID **Interface) {
+  (void)Registration;
+  assert (Guid == &gEfiGraphicsOutputProtocolGuid);
+  if (!UseGraphics) return EFI_NOT_FOUND;
+  *Interface = &Graphics;
   return EFI_SUCCESS;
 }
 
-VOID MenuScreenClose (MENU_SCREEN *Screen) {
-  memset (Screen, 0, sizeof (*Screen));
+static EFI_STATUS EFIAPI handle_graphics (EFI_HANDLE Handle, EFI_GUID *Guid, VOID **Interface) {
+  assert (Handle == &Output);
+  return locate_graphics (Guid, NULL, Interface);
 }
 
-EFI_STATUS MenuScreenClear (MENU_SCREEN *Screen) {
+static EFI_STATUS EFIAPI enable_cursor (EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *This, BOOLEAN Visible) {
+  assert (This == &Output);
+  This->Mode->CursorVisible = Visible;
+  return EFI_SUCCESS;
+}
+
+static EFI_STATUS EFIAPI set_attribute (EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *This, UINTN Attribute) {
+  assert (This == &Output);
+  This->Mode->Attribute = (INT32)Attribute;
+  return EFI_SUCCESS;
+}
+
+static EFI_STATUS EFIAPI query_mode (EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *This, UINTN Number,
+                                    UINTN *Columns, UINTN *Rows) {
+  assert (This == &Output && Number == 0);
+  *Columns = 80;
+  *Rows = 25;
+  return EFI_SUCCESS;
+}
+
+static EFI_STATUS EFIAPI test_string (EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *This, CHAR16 *Text) {
+  assert (This == &Output && Text != NULL);
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS __real_MenuScreenOpen (MENU_SCREEN *Screen, UINTN MinLines, UINTN MaxLines);
+
+EFI_STATUS __wrap_MenuScreenOpen (MENU_SCREEN *Screen, UINTN MinLines, UINTN MaxLines) {
+  assert (MinLines <= MaxLines);
+  MinimumLines = MinLines;
+  CurrentScreen = Screen;
+  return __real_MenuScreenOpen (Screen, MinLines, MaxLines);
+}
+
+EFI_STATUS __wrap_MenuScreenClear (MENU_SCREEN *Screen) {
   assert (Screen == CurrentScreen);
   ClearCount++;
   return EFI_SUCCESS;
 }
 
-EFI_STATUS MenuScreenLine (MENU_SCREEN *Screen, UINTN Row, MENU_LINE_STYLE Style,
-                          CONST CHAR16 *Text, UINTN Length) {
+EFI_STATUS __wrap_MenuScreenLine (MENU_SCREEN *Screen, UINTN Row, MENU_LINE_STYLE Style,
+                                 CONST CHAR16 *Text, UINTN Length) {
   assert (Screen == CurrentScreen);
   assert (Text != NULL && Length == MAX_UINTN);
+  assert (Row < Screen->Lines);
+  if (UseGraphics) {
+    assert (Screen->Top + (Row + 1) * 24 * Screen->Scale <= Info.VerticalResolution);
+  }
   if (Style == MenuLineTitle) {
     assert (Row == 0);
     DrawTop = Screen->Top;
@@ -66,6 +111,8 @@ EFI_STATUS MenuScreenLine (MENU_SCREEN *Screen, UINTN Row, MENU_LINE_STYLE Style
     if (Text == StatusText) {
       StatusRow = Row;
       StatusTop = Screen->Top;
+    } else if (Text == SubtitleText) {
+      assert (Row == 1);
     } else {
       assert (Row == Screen->Lines - 1 || Row == Screen->Lines - 3);
       FooterRow = Row;
@@ -130,18 +177,19 @@ static void check_menu_entry (void) {
 }
 
 static void check_layout (void) {
-  UINTN MenuTop = UseGraphics ? Info.VerticalResolution / 4 : 8;
+  UINTN MenuTop;
   UINTN BannerTop;
 
   ClearCount = 0;
   DrawStatus = EFI_SUCCESS;
   AtUiShowBanner (L"正在启动 Android 系统", FALSE);
+  MenuTop = CurrentScreen->Top;
   assert (AtUiScreenStatus () == EFI_SUCCESS);
   assert (ClearCount == 0);
-  assert (DrawTop > 0 && DrawTop < MenuTop);
-  assert (CurrentScreen->Top == MenuTop);
   if (UseGraphics) {
-    assert (DrawTop < Info.VerticalResolution / 8);
+    assert (DrawTop == Info.VerticalResolution / 16);
+    assert (MenuTop + CurrentScreen->Lines * 24 * CurrentScreen->Scale <=
+            Info.VerticalResolution - Info.VerticalResolution / 32);
   } else {
     assert (DrawTop == 1);
   }
@@ -164,12 +212,13 @@ static void check_layout (void) {
 }
 
 static void check_status_layout (void) {
-  UINTN MenuTop = UseGraphics ? Info.VerticalResolution / 4 : 8;
+  UINTN MenuTop;
 
   DrawStatus = EFI_SUCCESS;
   StatusRow = FooterRow = MAX_UINTN;
   AtUiSetStatusLine (StatusText);
   AtUiBeginScreen (L"菜单", NULL);
+  MenuTop = CurrentScreen->Top;
   AtUiEndScreen (FooterText);
   assert (AtUiScreenStatus () == EFI_SUCCESS && MinimumLines == 9);
   assert (StatusRow == CurrentScreen->Lines - 2 && StatusTop == MenuTop);
@@ -178,7 +227,7 @@ static void check_status_layout (void) {
 
   StatusRow = MAX_UINTN;
   AtUiShowBanner (L"正在启动 Android", FALSE);
-  assert (DrawTop < StatusTop && StatusTop == MenuTop);
+  assert (StatusTop == MenuTop);
   assert (StatusRow == CurrentScreen->Lines - 2);
   assert (CurrentScreen->Top == MenuTop);
 
@@ -188,15 +237,42 @@ static void check_status_layout (void) {
   AtUiEndScreen (FooterText);
   assert (MinimumLines == 7 && StatusRow == MAX_UINTN);
   assert (FooterRow == CurrentScreen->Lines - 1);
+
+  UINTN Rows = AtUiVisibleRows ();
+  assert (Rows > 0);
+  if (UseGraphics && Info.VerticalResolution >= 1920) {
+    assert (Rows > 12);
+  }
+  for (UINTN Cursor = 0; Cursor < 7; Cursor++) {
+    UINTN Start = AtUiWindowStart (Cursor, 7, Rows);
+    assert (Start <= Cursor && Cursor < Start + Rows);
+    if (Rows >= 7) assert (Start == 0);
+  }
+  AtUiBeginScreen (L"菜单", SubtitleText);
+  assert (AtUiVisibleRows () + 1 == Rows);
   AtUiReleaseScreen ();
 }
 
 int main (void) {
-  static const UINT32 Heights[] = { 3168, 2400, 1080, 320 };
+  static const UINT32 Resolutions[][2] = {
+    { 1440, 3168 }, { 1080, 2400 }, { 1080, 1920 },
+    { 2400, 1080 }, { 240, 320 }, { 320, 240 }
+  };
+
+  BootServices.HandleProtocol = handle_graphics;
+  BootServices.LocateProtocol = locate_graphics;
+  Output.Mode = &OutputMode;
+  Output.EnableCursor = enable_cursor;
+  Output.SetAttribute = set_attribute;
+  Output.QueryMode = query_mode;
+  Output.TestString = test_string;
+  SystemTable.ConOut = &Output;
+  SystemTable.ConsoleOutHandle = &Output;
 
   UseGraphics = TRUE;
-  for (UINTN Index = 0; Index < sizeof (Heights) / sizeof (Heights[0]); Index++) {
-    Info.VerticalResolution = Heights[Index];
+  for (UINTN Index = 0; Index < sizeof (Resolutions) / sizeof (Resolutions[0]); Index++) {
+    Info.HorizontalResolution = Resolutions[Index][0];
+    Info.VerticalResolution = Resolutions[Index][1];
     check_layout ();
     check_status_layout ();
   }
@@ -204,6 +280,6 @@ int main (void) {
   check_layout ();
   check_status_layout ();
   check_menu_entry ();
-  puts ("启动提示、BL 状态栏留白、完整首屏后清理按键及输入失败处理测试通过");
+  puts ("真实屏幕布局、大小屏行数与滚动、启动提示位置和菜单输入测试通过");
   return 0;
 }

@@ -78,9 +78,6 @@ MenuScreenOpen (OUT MENU_SCREEN *Screen, IN UINTN MinLines, IN UINTN MaxLines)
         Screen->Graphics = Graphics;
         Screen->GraphicsMode = Graphics->Mode->Mode;
         Screen->Scale = Scale;
-        if (Height > Width) {
-          AvailableHeight = MAX (Height / 2, MinLines * LINE_HEIGHT * Scale);
-        }
         Screen->Lines = MIN (MaxLines, AvailableHeight / (LINE_HEIGHT * Scale));
         Screen->Top = (Height - Screen->Lines * LINE_HEIGHT * Scale) / 2;
         Out->EnableCursor (Out, FALSE);

@@ -291,9 +291,9 @@ int32_t track_forward(char* buffer, int32_t size, int32_t start_offset,
     return FAILURE;
 }
 bool str_at(const char* buffer, int32_t size, int64_t file_off, const char* needle) {
-    if (file_off < 0) return false;
-    int32_t len = strlen(needle);
-    if ((int32_t)file_off + len >= size) return false;
+    if (file_off < 0 || file_off >= size) return false;
+    size_t len = strlen(needle) + 1;
+    if (len > (uint64_t)(size - file_off)) return false;
     return memcmp(buffer + file_off, needle, len) == 0;
 }
 int64_t calc_adrl_file_offset(const char* buffer, int32_t adrp_off, uint64_t load_base) {

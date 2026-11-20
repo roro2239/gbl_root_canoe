@@ -9,13 +9,14 @@
  */
 
 #include "SuperFbMenu.h"
-#include "SuperFbAdvanced.h"
+#include "SuperFbBootOptions.h"
 
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PrintLib.h>
+#include <Library/SfbSecurity.h>
 #include <Library/ShutdownServices.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
@@ -122,27 +123,33 @@ SfbWaitForKey (IN UINT32 TimeoutMs)
 /* ---- drawing ------------------------------------------------------------ */
 
 STATIC
-VOID
-SfbUpdateBlStateFooter (VOID)
+CONST CHAR16 *
+SfbBlStateText (IN BOOLEAN ForMenu)
 {
-  STATIC CHAR16 Text[80];
+  STATIC CHAR16 ErrorText[80];
   EFI_STATUS Status;
   BOOLEAN Unlocked;
 
   Status = SfbReadBlState (&Unlocked);
   if (EFI_ERROR (Status)) {
-    UnicodeSPrint (Text, sizeof (Text), L"BL 真实状态：读取失败（0x%lx）", (UINT64)Status);
-  } else {
-    UnicodeSPrint (Text, sizeof (Text), L"BL 真实状态：%s", Unlocked ? L"已解锁" : L"已锁定");
+    UnicodeSPrint (ErrorText, sizeof (ErrorText), L"BL 真实状态：读取失败（0x%lx）", (UINT64)Status);
+    return ErrorText;
   }
-  AtUiSetStatusLine (Text);
+  if (ForMenu) {
+    return Unlocked ? L"已解锁" : L"未解锁";
+  }
+  return Unlocked ? L"BL 真实状态：已解锁" : L"BL 真实状态：已锁定";
 }
 
 VOID
 SfbBeginScreen (IN CONST CHAR16 *Title OPTIONAL, IN CONST CHAR16 *Subtitle OPTIONAL)
 {
-  SfbUpdateBlStateFooter ();
-  AtUiBeginScreen ((Title != NULL) ? Title : gSfbRootTitle, Subtitle);
+  CHAR16 Text[SFB_NAME_CHARS + 80];
+
+  UnicodeSPrint (Text, sizeof (Text), L"%s-%s",
+                  (Title != NULL) ? Title : gSfbRootTitle, SfbBlStateText (TRUE));
+  AtUiSetStatusLine (NULL);
+  AtUiBeginScreen (Text, Subtitle);
 }
 
 VOID
@@ -205,7 +212,7 @@ SfbMoveCursor (IN OUT UINTN *Cursor, IN UINTN Count, IN SFB_KEY Key)
 VOID
 SfbReportStatus (IN CONST CHAR16 *What, IN EFI_STATUS Status)
 {
-  SfbUpdateBlStateFooter ();
+  AtUiSetStatusLine (SfbBlStateText (FALSE));
   AtUiReportStatus (What, Status);
 }
 
@@ -218,26 +225,34 @@ SfbReportStatus (IN CONST CHAR16 *What, IN EFI_STATUS Status)
 VOID
 SfbShowFastbootMode (VOID)
 {
-  SfbUpdateBlStateFooter ();
+  AtUiSetStatusLine (SfbBlStateText (FALSE));
   AtUiShowMessage (L"SuperFastboot 模式");
 }
 
-/*
- * Clear the menu away and announce the launch. The loaded image prints nothing
- * of its own until it takes over, so without this the boot menu would linger on
- * screen through the load.
- */
 VOID
 SfbShowBootingScreen (IN CONST CHAR16 *Name, IN BOOLEAN ClearScreen)
 {
+  STATIC CHAR16 ErrorText[80];
   CHAR16 Text[SFB_NAME_CHARS + 8];
+  CONST CHAR16 *Title = (Name != NULL) ? Name : L"";
+  CONST CHAR16 *Footer = NULL;
+  SFB_BOOT_OPTIONS Options;
+  EFI_STATUS Status;
 
-  if (Name != NULL && StrnCmp (Name, L"启动 ", 3) == 0) {
-    Name += 3;
+  if (StrnCmp (Title, L"启动 ", 3) == 0) {
+    Title += 3;
   }
-  UnicodeSPrint (Text, sizeof (Text), L"正在启动 %s", (Name != NULL) ? Name : L"");
-  SfbUpdateBlStateFooter ();
-  AtUiShowBanner (Text, ClearScreen);
+  Status = SfbLoadBootOptions (&Options);
+  if (EFI_ERROR (Status)) {
+    UnicodeSPrint (ErrorText, sizeof (ErrorText), L"BL 真实状态：设置读取失败（0x%lx）", (UINT64)Status);
+    Footer = ErrorText;
+  } else if (Options.ShowUiHints) {
+    UnicodeSPrint (Text, sizeof (Text), L"正在启动 %s", Title);
+    Title = Text;
+    Footer = SfbBlStateText (FALSE);
+  }
+  AtUiSetStatusLine (Footer);
+  AtUiShowBanner (Title, ClearScreen);
 }
 
 /*
@@ -297,9 +312,16 @@ VOID
 SfbShowEnteringScreen (IN CONST CHAR16 *What)
 {
   CHAR16 Text[SFB_NAME_CHARS + 8];
+  SFB_BOOT_OPTIONS Options;
+  EFI_STATUS Status;
 
-  UnicodeSPrint (Text, sizeof (Text), L"正在进入%s", (What != NULL) ? What : L"菜单");
-  AtUiShowMessage (Text);
+  Status = SfbLoadBootOptions (&Options);
+  if (EFI_ERROR (Status)) {
+    SfbReportStatus (L"启动选项读取失败", Status);
+  } else if (Options.ShowUiHints) {
+    UnicodeSPrint (Text, sizeof (Text), L"正在进入%s", (What != NULL) ? What : L"菜单");
+    AtUiShowMessage (Text);
+  }
 
   /* 完整子菜单绘制后、第一次接收按键前再等待释放按键。 */
   mSubmenuInputPending = TRUE;
@@ -319,11 +341,70 @@ SfbDebounceMenuExit (VOID)
 
 /* ---- boot menu ---------------------------------------------------------- */
 
+STATIC
+VOID
+SfbRunBootOptions (VOID)
+{
+  SFB_BOOT_OPTIONS Options;
+  SFB_BOOT_OPTIONS Next;
+  EFI_STATUS Status;
+  UINTN Cursor = 0;
+  SFB_KEY Key;
+
+  Status = SfbLoadBootOptions (&Options);
+  if (EFI_ERROR (Status)) {
+    SfbReportStatus (L"启动选项读取失败", Status);
+    return;
+  }
+  SfbShowEnteringScreen (L"启动选项");
+  while (TRUE) {
+    SfbBeginScreen (L"启动选项", L"设置自动保存");
+    SfbDrawRow ((BOOLEAN)(Cursor == 0), Options.BootWarning ? L"✓" : L" ",
+                Options.BootWarning ? L"开机提示：开" : L"开机提示：关");
+    SfbDrawRow ((BOOLEAN)(Cursor == 1), Options.FixFastboot ? L"✓" : L" ",
+                Options.FixFastboot ? L"修复官方 FB：开" : L"修复官方 FB：关");
+    SfbDrawRow ((BOOLEAN)(Cursor == 2), Options.ShowUiHints ? L"✓" : L" ",
+                Options.ShowUiHints ? L"启动 / 菜单提示：开" : L"启动 / 菜单提示：关");
+    SfbDrawRow ((BOOLEAN)(Cursor == 3), L" ", L"返回");
+    SfbEndScreen (L"音量键移动，电源键切换或返回");
+    Key = SfbWaitForKey (0);
+    if (Key == SfbKeyDisplayError) return;
+    if (Key == SfbKeyUp || Key == SfbKeyDown) {
+      SfbMoveCursor (&Cursor, 4, Key);
+      continue;
+    }
+    if (Key != SfbKeySelect) continue;
+    if (Cursor == 3) {
+      SfbDebounceMenuExit ();
+      return;
+    }
+    Next = Options;
+    if (Cursor == 0) Next.BootWarning = !Options.BootWarning;
+    else if (Cursor == 1) Next.FixFastboot = !Options.FixFastboot;
+    else Next.ShowUiHints = !Options.ShowUiHints;
+    Status = SfbSaveBootOptions (&Next);
+    if (EFI_ERROR (Status)) {
+      SfbReportStatus (L"启动选项保存失败", Status);
+      Status = SfbLoadBootOptions (&Options);
+      if (EFI_ERROR (Status)) {
+        SfbReportStatus (L"启动选项读取失败", Status);
+        return;
+      }
+    } else {
+      Options = Next;
+    }
+    gBS->Stall (250000);
+    gST->ConIn->Reset (gST->ConIn, FALSE);
+  }
+}
+
 typedef enum {
   SfbRowEntry = 0,   /* launches List->Entry[Entry] */
   SfbRowFolder,      /* opens the next level of the name hierarchy */
   SfbRowBack,
-  SfbRowAdvanced,
+  SfbRowFastboot,
+  SfbRowSelector,
+  SfbRowBootOptions,
   SfbRowPowerOff,
   SfbRowRestart
 } SFB_ROW_KIND;
@@ -335,7 +416,7 @@ typedef struct {
   CONST CHAR16  *FolderCaption;
 } SFB_MENU_ROW;
 
-#define SFB_MAX_MENU_ROWS  (SFB_MAX_ENTRIES + 4)
+#define SFB_MAX_MENU_ROWS  (SFB_MAX_ENTRIES + 5)
 
 STATIC
 VOID
@@ -412,7 +493,9 @@ SfbBuildRows (IN CONST SFB_ENTRY_LIST *List,
   }
 
   if (Prefix[0] == L'\0') {
-    SfbAddRow (Rows, &Count, SfbRowAdvanced, SFB_NO_INDEX, L"高级选项");
+    SfbAddRow (Rows, &Count, SfbRowFastboot, SFB_NO_INDEX, L"进入 SuperFastboot");
+    SfbAddRow (Rows, &Count, SfbRowSelector, SFB_NO_INDEX, L"EFI 程序选择器");
+    SfbAddRow (Rows, &Count, SfbRowBootOptions, SFB_NO_INDEX, L"启动选项");
     SfbAddRow (Rows, &Count, SfbRowPowerOff, SFB_NO_INDEX, L"关机");
     SfbAddRow (Rows, &Count, SfbRowRestart, SFB_NO_INDEX, L"重启");
   } else {
@@ -504,7 +587,7 @@ SfbRefreshEntries (VOID)
 
 /*
  * Run one level of the menu, Prefix naming it ("" for the root). Returns TRUE
- * when the user picked "Enter Fastboot" in Advanced; FALSE when Back left a
+ * when the user picked "Enter Fastboot"; FALSE when Back left a
  * nested level.
  */
 STATIC
@@ -577,15 +660,25 @@ SfbRunMenuLevel (IN CONST CHAR16 *Prefix, IN UINTN Depth, IN CONST CHAR16 *Title
       Rebuild = TRUE;
       break;
 
-    case SfbRowAdvanced:
-      /* Advanced owns fastboot: a TRUE return means the user picked "Enter
-       * Fastboot" there and the caller should hand over to it. */
-      if (SfbRunAdvancedMenu ()) {
-        Fastboot = TRUE;
-        goto Done;
+    case SfbRowFastboot:
+      Fastboot = TRUE;
+      goto Done;
+
+    case SfbRowSelector:
+      if (SfbSecurityLocked ()) {
+        SfbReportStatus (L"设备已锁定", EFI_ACCESS_DENIED);
+        break;
       }
-      /* Priority, Management or a config export may have changed the list.
-       * No rescan here: it would put back an entry just deleted. */
+      SfbRunFileBrowser ();
+      Rebuild = TRUE;
+      break;
+
+    case SfbRowBootOptions:
+      if (SfbSecurityLocked ()) {
+        SfbReportStatus (L"设备已锁定", EFI_ACCESS_DENIED);
+        break;
+      }
+      SfbRunBootOptions ();
       Rebuild = TRUE;
       break;
 

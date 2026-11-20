@@ -184,10 +184,11 @@ SfbMakeFileEntry (IN EFI_HANDLE        Volume,
  * refused the file as an unsupported (non-PE/COFF or foreign-architecture)
  * image; EFI_NOT_FOUND, EFI_SECURITY_VIOLATION and the like leave it FALSE.
  *
- * ClearScreen controls the "Booting <name>" banner: TRUE clears the screen
+ * ClearScreen controls the entry banner: TRUE clears the screen
  * first (menu-driven launch), FALSE leaves the current screen contents in place
  * (unattended boot, which must not blank the boot splash).
- * 手动启动 Android 需三次确认，取消返回 EFI_ABORTED。
+ * 手动启动 Android 需三次确认；取消返回 EFI_ABORTED，不加载或保存。
+ * 假回锁和真实状态在确认后保存启动顺序，备份保留原选择。
  */
 EFI_STATUS
 SfbLaunchEntry (IN CONST SFB_BOOT_ENTRY *Entry,
@@ -243,8 +244,8 @@ VOID
 SfbShowEnteringMenu (VOID);
 
 /*
- * Announce that an entry is being launched, so the menu the user picked from
- * does not stay on screen while the image loads. Title is "Booting <Name>".
+ * Display the entry name while the image loads. The optional boot details
+ * add the progress text and the device's BL state.
  *
  * When ClearScreen is TRUE the console is cleared first (menu launch); when
  * FALSE the current screen is left as-is (unattended default boot).
@@ -253,7 +254,7 @@ VOID
 SfbShowBootingScreen (IN CONST CHAR16 *Name, IN BOOLEAN ClearScreen);
 
 /*
- * Show "Entering <What>" while the submenu is prepared. The first SfbWaitForKey
+ * Optionally show "Entering <What>" while the submenu is prepared. The first SfbWaitForKey
  * waits for the launching key to be released after the full screen is drawn.
  */
 VOID
@@ -273,9 +274,6 @@ SfbWaitForKey (IN UINT32 TimeoutMs);
 /* ---- shared console helpers (SuperFbMenu.c) ----------------------------- */
 
 extern CONST CHAR16 gSfbRootTitle[];
-
-EFI_STATUS
-SfbReadBlState (OUT BOOLEAN *Unlocked);
 
 typedef enum {
   SfbBootModeOther = 0,

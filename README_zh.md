@@ -91,3 +91,19 @@
 2. `boot.efi` / `ABL.efi`：带假回锁的破解 ABL（模块中名为 `boot.efi`；toolkit 中名为 `ABL.efi`），存放在 `persist` 的 `efisp/` 下。
 3. `LinuxLoader.efi` / `ABL_original.efi`：原始未破解 ABL。用于分析，**不要刷入 `efisp`**。
 4. `BOOTENTRIES`：启动项列表，格式 `<名称>:<相对 efisp/ 的路径>`。
+
+## 真实 BL 状态透传模式
+
+“启动方式”菜单包含假回锁、真实状态和备份三个入口。工具包生成、模块首次安装和 WebUI 完整更新会从同一份原始 ABL 分别生成前两项，模块完整更新时还会保留旧启动文件。
+
+| 文件 | 行为 |
+| --- | --- |
+| `efisp/boot.efi` | 假回锁启动 |
+| `efisp/boot_normal.efi` | 透传原始 BL 状态和启动验证状态 |
+| `efisp/boot_backup.efi` | 更新前的启动文件，存在旧文件时保留 |
+
+手动生成时使用 `patch_abl 原始.efi boot_normal.efi normal` 或 `patch_abl 原始.efi boot.efi fake_locked`。省略模式时默认假回锁。已有 `--defer-fastboot` 参数可与任一模式组合使用。两个模式均需读取从原始 ABL 提取的 loader。
+
+已有安装可从匹配系统版本的原始 ABL 重新生成两项，再更新 persist 中的启动文件与卷根 `ENTRIES.CFG`。菜单使用 `Boot Modes\Android (Real State):\efisp\boot_normal.efi` 识别真实状态入口。
+
+双模式设计参考 [ditvelo/gbl_root_canoe](https://github.com/ditvelo/gbl_root_canoe/tree/2cf345a299df3f8b7172d6ad2fa5985e67fe53d6)，经本项目现有补丁接口适配。

@@ -8,6 +8,7 @@
  */
 
 #include "SuperFbMenu.h"
+#include "SuperFbBootOptions.h"
 #include <AtDevInfo.h>
 
 #include <Library/BaseLib.h>
@@ -540,6 +541,102 @@ SfbWriteStoredEntries (IN CONST SFB_ENTRY_LIST *List)
   return Status;
 }
 
+/* ---- boot options ------------------------------------------------------- */
+
+#define SFB_BOOT_OPTIONS_PATH  L"\\CONFIG\\BOOTOPTIONS.CFG"
+#define SFB_BOOT_OPTIONS_TEMP  L"\\CONFIG\\BOOTOPTIONS.TMP"
+
+EFI_STATUS
+SfbLoadBootOptions (OUT SFB_BOOT_OPTIONS *Options)
+{
+  EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *Fs = NULL;
+  EFI_FILE_PROTOCOL *Root = NULL;
+  EFI_STATUS Status;
+  EFI_STATUS CloseStatus;
+  CHAR8 Record[12];
+  UINTN Size = 0;
+
+  Options->BootWarning = FALSE;
+  Options->FixFastboot = TRUE;
+  Options->ShowUiHints = FALSE;
+  Status = SfbConfigStoreGetFs (&Fs, NULL);
+  if (Status == EFI_NOT_FOUND) {
+    return EFI_SUCCESS;
+  }
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+  Status = Fs->OpenVolume (Fs, &Root);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+  Status = SfbReadFileBytes (Root, SFB_BOOT_OPTIONS_PATH, Record, sizeof (Record), &Size);
+  CloseStatus = Root->Close (Root);
+  if (EFI_ERROR (CloseStatus)) {
+    return CloseStatus;
+  }
+  if (Status == EFI_NOT_FOUND) {
+    return EFI_SUCCESS;
+  }
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+  if (((Size != 9 || CompareMem (Record, "SFBO1|", 6) != 0) &&
+       (Size != 11 || CompareMem (Record, "SFBO2|", 6) != 0)) || Record[7] != '|' ||
+      (Record[6] != '0' && Record[6] != '1') ||
+      (Record[8] != '0' && Record[8] != '1') ||
+      (Size == 11 && (Record[9] != '|' || (Record[10] != '0' && Record[10] != '1')))) {
+    return EFI_VOLUME_CORRUPTED;
+  }
+  Options->BootWarning = (BOOLEAN)(Record[6] == '1');
+  Options->FixFastboot = (BOOLEAN)(Record[8] == '1');
+  if (Size == 11) Options->ShowUiHints = (BOOLEAN)(Record[10] == '1');
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS
+SfbSaveBootOptions (IN CONST SFB_BOOT_OPTIONS *Options)
+{
+  EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *Fs = NULL;
+  EFI_HANDLE Volume = NULL;
+  EFI_FILE_PROTOCOL *Root = NULL;
+  EFI_FILE_PROTOCOL *Dir = NULL;
+  EFI_BLOCK_IO_PROTOCOL *BlockIo = NULL;
+  EFI_STATUS Status;
+  EFI_STATUS CloseStatus;
+  CHAR8 Record[] = "SFBO2|0|1|0";
+
+  Record[6] = Options->BootWarning ? '1' : '0';
+  Record[8] = Options->FixFastboot ? '1' : '0';
+  Record[10] = Options->ShowUiHints ? '1' : '0';
+  Status = SfbConfigStoreGetFs (&Fs, &Volume);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+  Status = Fs->OpenVolume (Fs, &Root);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+  Status = Root->Open (Root, &Dir, SFB_STORE_DIR_PATH,
+                       EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE |
+                         EFI_FILE_MODE_CREATE, EFI_FILE_DIRECTORY);
+  if (!EFI_ERROR (Status)) {
+    Status = Dir->Close (Dir);
+  }
+  if (!EFI_ERROR (Status)) Status = SfbDeleteFile (Root, SFB_BOOT_OPTIONS_TEMP);
+  if (!EFI_ERROR (Status)) Status = SfbWriteNewFile (Root, SFB_BOOT_OPTIONS_TEMP, Record, sizeof (Record) - 1);
+  if (!EFI_ERROR (Status)) Status = SfbDeleteFile (Root, SFB_BOOT_OPTIONS_PATH);
+  if (!EFI_ERROR (Status)) Status = SfbRenameFile (Root, SFB_BOOT_OPTIONS_TEMP, SFB_BOOT_OPTIONS_PATH);
+  if (!EFI_ERROR (Status)) Status = Root->Flush (Root);
+  CloseStatus = Root->Close (Root);
+  if (!EFI_ERROR (Status)) Status = CloseStatus;
+  if (!EFI_ERROR (Status)) {
+    Status = gBS->HandleProtocol (Volume, &gEfiBlockIoProtocolGuid, (VOID **)&BlockIo);
+    if (!EFI_ERROR (Status)) Status = BlockIo->FlushBlocks (BlockIo);
+  }
+  return Status;
+}
+
 EFI_STATUS
 SfbReadBlState (OUT BOOLEAN *Unlocked)
 {
@@ -570,6 +667,8 @@ SfbReadBlState (OUT BOOLEAN *Unlocked)
  */
 STATIC EFI_SECURITY_ARCH_PROTOCOL          *mSfbSec      = NULL;
 STATIC EFI_SECURITY2_ARCH_PROTOCOL         *mSfbSec2     = NULL;
+STATIC VOID                               *mSfbPreparedImage;
+STATIC UINTN                               mSfbPreparedSize;
 
 STATIC
 EFI_STATUS
@@ -594,6 +693,11 @@ SfbAllowAuth (IN CONST EFI_SECURITY2_ARCH_PROTOCOL *This,
 
   if (FileBuffer == NULL || FileSize == 0) {
     /* Nothing to verify; let the firmware's own policy decide. */
+    return EFI_SUCCESS;
+  }
+
+  /* 仅当前 LoadImage 的副本可复用原始镜像的验签结果，其他镜像照常验签。 */
+  if (FileBuffer == mSfbPreparedImage && FileSize == mSfbPreparedSize) {
     return EFI_SUCCESS;
   }
 
@@ -658,6 +762,104 @@ SfbLoadDriver (IN EFI_HANDLE Volume, IN CONST CHAR16 *Path)
   return Status;
 }
 
+STATIC
+EFI_STATUS
+SfbPrepareBootImage (IN CONST SFB_BOOT_ENTRY *Entry, OUT VOID **Buffer, OUT UINTN *Size)
+{
+  SFB_BOOT_OPTIONS Options;
+  EFI_FILE_PROTOCOL *Root = NULL;
+  EFI_FILE_PROTOCOL *File = NULL;
+  EFI_STATUS Status;
+  EFI_STATUS CloseStatus;
+  UINT64 Length;
+  UINTN Done = 0;
+
+  *Buffer = NULL;
+  *Size = 0;
+  if (!SfbIsAndroidBootEntry (&Entry->Spec)) {
+    return EFI_SUCCESS;
+  }
+  Status = SfbLoadBootOptions (&Options);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+  if (Options.BootWarning) {
+    BOOLEAN Unlocked;
+    Status = SfbReadBlState (&Unlocked);
+    if (EFI_ERROR (Status)) return Status;
+    /* 真正回锁的设备不强制进入解锁警告路径。 */
+    Options.BootWarning = Unlocked;
+  }
+  Status = SfbOpenVolumeRoot (Entry->Volume, &Root);
+  if (EFI_ERROR (Status)) return Status;
+  Status = Root->Open (Root, &File, (CHAR16 *)Entry->Spec.Path, EFI_FILE_MODE_READ, 0);
+  CloseStatus = Root->Close (Root);
+  if (!EFI_ERROR (Status)) Status = CloseStatus;
+  if (!EFI_ERROR (Status)) Status = File->SetPosition (File, MAX_UINT64);
+  if (!EFI_ERROR (Status)) Status = File->GetPosition (File, &Length);
+  if (!EFI_ERROR (Status) && (Length == 0 || Length > 32 * 1024 * 1024)) {
+    Status = EFI_BAD_BUFFER_SIZE;
+  }
+  if (!EFI_ERROR (Status)) {
+    *Size = (UINTN)Length;
+    *Buffer = AllocatePool (*Size);
+    if (*Buffer == NULL) Status = EFI_OUT_OF_RESOURCES;
+  }
+  if (!EFI_ERROR (Status)) Status = File->SetPosition (File, 0);
+  while (!EFI_ERROR (Status) && Done < *Size) {
+    UINTN Read = *Size - Done;
+    Status = File->Read (File, &Read, (UINT8 *)*Buffer + Done);
+    if (!EFI_ERROR (Status) && (Read == 0 || Read > *Size - Done)) Status = EFI_DEVICE_ERROR;
+    if (!EFI_ERROR (Status)) Done += Read;
+  }
+  if (File != NULL) {
+    CloseStatus = File->Close (File);
+    if (!EFI_ERROR (Status)) Status = CloseStatus;
+  }
+  /* 先验证磁盘原件，再应用受控补丁，不能让修改后的副本绕过原件验签。 */
+  if (!EFI_ERROR (Status)) Status = SfbSecurityVerifyImage (*Buffer, *Size);
+  if (Status == EFI_UNSUPPORTED) Status = EFI_ACCESS_DENIED;
+  if (!EFI_ERROR (Status)) Status = SfbPatchBootImage (*Buffer, *Size, &Options);
+  if (EFI_ERROR (Status) && *Buffer != NULL) {
+    FreePool (*Buffer);
+    *Buffer = NULL;
+    *Size = 0;
+  }
+  return Status;
+}
+
+STATIC
+EFI_STATUS
+SfbSaveBootMode (IN CONST SFB_BOOT_ENTRY *Entry)
+{
+  SFB_ENTRY_LIST *List = SfbEntries ();
+  SFB_BOOT_ENTRY Previous;
+  UINTN First;
+  UINTN Chosen;
+  EFI_STATUS Status;
+
+  if (List == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+  First = SfbDefaultBootModeIndex (List);
+  Chosen = SfbEntryListFind (List, &Entry->Spec);
+  /* 文件选择器中的临时入口不加入启动顺序。 */
+  if (First == SFB_NO_INDEX || Chosen == SFB_NO_INDEX || First == Chosen) {
+    return EFI_SUCCESS;
+  }
+
+  /* 只交换两个启动方式，保留驱动、自定义项和备份所在的位置。 */
+  Previous = List->Entry[First];
+  List->Entry[First] = List->Entry[Chosen];
+  List->Entry[Chosen] = Previous;
+  Status = SfbWriteStoredEntries (List);
+  if (EFI_ERROR (Status)) {
+    List->Entry[Chosen] = List->Entry[First];
+    List->Entry[First] = Previous;
+  }
+  return Status;
+}
+
 EFI_STATUS
 SfbLaunchEntry (IN CONST SFB_BOOT_ENTRY *Entry,
                 IN BOOLEAN              ClearScreen,
@@ -667,6 +869,9 @@ SfbLaunchEntry (IN CONST SFB_BOOT_ENTRY *Entry,
   EFI_HANDLE  ImageHandle = NULL;
   CHAR16      *ExitData = NULL;
   UINTN       ExitDataSize = 0;
+  VOID        *ImageBuffer = NULL;
+  UINTN       ImageSize = 0;
+  SFB_BOOT_ENTRY Selected;
 
   if (NotPeImage != NULL) {
     *NotPeImage = FALSE;
@@ -679,18 +884,41 @@ SfbLaunchEntry (IN CONST SFB_BOOT_ENTRY *Entry,
     if (!SfbConfirmBootMode (Entry)) {
       return EFI_ABORTED;
     }
+    /* 保存方式会交换列表项，启动参数必须保留所选入口的副本。 */
+    Selected = *Entry;
+    Entry = &Selected;
   }
 
-  /*
-   * Announce the launch: "Booting <name>". Clearing the screen first is only
-   * done for a menu-driven launch; an unattended boot leaves the screen (e.g.
-   * the boot splash) untouched.
-   */
+  Status = SfbPrepareBootImage (Entry, &ImageBuffer, &ImageSize);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((EFI_D_ERROR, "SFB: preparing boot options for '%s' failed: %r\n", Entry->Spec.Path, Status));
+    SfbReportStatus ((Status == EFI_UNSUPPORTED)
+                      ? L"镜像不支持该启动选项，请重新生成 boot.efi"
+                      : L"无法应用启动选项", Status);
+    return EFI_ABORTED;
+  }
+
+  if (ClearScreen && SfbIsAndroidBootEntry (&Entry->Spec) &&
+      SfbGetBootMode (&Entry->Spec) != SfbBootModeBackup) {
+    Status = SfbSaveBootMode (Entry);
+    if (EFI_ERROR (Status)) {
+      if (ImageBuffer != NULL) FreePool (ImageBuffer);
+      SfbReportStatus (L"保存启动方式失败", Status);
+      return EFI_ABORTED;
+    }
+  }
+
+  /* 菜单启动时清屏，自动启动时在开机画面上显示启动项名称。 */
   SfbShowBootingScreen (SfbEntryDisplayName (&Entry->Spec, Entry->Spec.Name), ClearScreen);
 
   SfbLoadSecurityPolicy ();
+  mSfbPreparedImage = ImageBuffer;
+  mSfbPreparedSize = ImageSize;
   Status = gBS->LoadImage (FALSE, gImageHandle, Entry->DevicePath,
-                           NULL, 0, &ImageHandle);
+                           ImageBuffer, ImageSize, &ImageHandle);
+  mSfbPreparedImage = NULL;
+  mSfbPreparedSize = 0;
+  if (ImageBuffer != NULL) FreePool (ImageBuffer);
 
   if (EFI_ERROR (Status)) {
     DEBUG ((EFI_D_ERROR, "SFB: LoadImage '%s' failed: %r\n",
@@ -745,8 +973,21 @@ SfbStartupLaunch (IN  CONST SFB_BOOT_ENTRY *Entry,
                   IN  VOID                 *Context)
 {
   EFI_STATUS  Status;
+  BOOLEAN     *BootModeTried = Context;
+  SFB_BOOT_MODE Mode = SfbGetBootMode (&Entry->Spec);
 
-  (VOID)Context;
+  /* 当前方式失败后不能自动切到另一状态或未知状态的备份。 */
+  if (Mode == SfbBootModeBackup) {
+    *NotPeImage = FALSE;
+    return EFI_ABORTED;
+  }
+  if (Mode != SfbBootModeOther) {
+    if (*BootModeTried) {
+      *NotPeImage = FALSE;
+      return EFI_ABORTED;
+    }
+    *BootModeTried = TRUE;
+  }
   Status = SfbLaunchEntry (Entry, FALSE, NotPeImage);
   if (*NotPeImage) {
     DEBUG ((EFI_D_ERROR, "SFB: dropping '%s': not a PE/COFF image\n",
@@ -767,6 +1008,7 @@ VOID
 SfbRunStartup (IN BOOLEAN MenuRequested)
 {
   SFB_ENTRY_LIST  *List = SfbEntries ();
+  BOOLEAN         BootModeTried = FALSE;
 
   if (List == NULL) {
     return;
@@ -797,7 +1039,7 @@ SfbRunStartup (IN BOOLEAN MenuRequested)
    * back; one that fails or returns hands over to the next entry. Only an
    * entry whose file is not a loadable PE/COFF image is dropped - missing
    * media, a security refusal or low memory may all be gone next boot. */
-  SfbEntryListBootInOrder (List, SfbStartupLaunch, SfbStartupStore, NULL);
+  SfbEntryListBootInOrder (List, SfbStartupLaunch, SfbStartupStore, &BootModeTried);
 
   /* Every entry failed: fall back to the menu. */
 }

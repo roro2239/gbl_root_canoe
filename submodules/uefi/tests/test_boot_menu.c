@@ -13,21 +13,31 @@ static EFI_BOOT_SERVICES BootServices;
 static EFI_SYSTEM_TABLE SystemTable;
 static EFI_SIMPLE_TEXT_INPUT_PROTOCOL Input;
 static EFI_SIMPLE_FILE_SYSTEM_PROTOCOL Fs;
+static EFI_FILE_PROTOCOL Root, File, ImageFile;
+static EFI_LOADED_IMAGE_PROTOCOL Loaded;
 static QCOM_VERIFIEDBOOT_PROTOCOL VerifiedBoot;
 static DeviceInfo Device;
 EFI_BOOT_SERVICES *gBS = &BootServices;
 EFI_SYSTEM_TABLE *gST = &SystemTable;
 EFI_HANDLE gImageHandle;
-EFI_GUID gEfiQcomVerifiedBootProtocolGuid, gEfiLoadedImageProtocolGuid;
+EFI_GUID gEfiQcomVerifiedBootProtocolGuid, gEfiFileInfoGuid;
 EFI_GUID gEfiSecurityArchProtocolGuid, gEfiSecurity2ArchProtocolGuid;
+EFI_GUID gEfiBlockIoProtocolGuid, gEfiLoadedImageProtocolGuid;
 
 static SFB_KEY Keys[16];
 static UINTN KeyCount, KeyIndex, Confirmations, Stalls, Resets;
-static UINTN Loads, DeviceWrites, Reports, ConfirmationsAtLoad;
-static EFI_STATUS ResetStatus, WaitStatus;
+static UINTN ImageOpens, Loads, Starts, Writes, DeviceWrites, Reports;
+static EFI_STATUS ResetStatus, WaitStatus, WriteStatus;
+static CHAR8 OptionsRecord[12] = "SFBO2|0|1|0";
+static CHAR8 EntriesRecord[SFB_ENTRIES_MAX_BYTES + 1];
+static CHAR16 FilePath[SFB_PATH_CHARS];
 static CHAR16 Markers[8];
+static CHAR16 DrawnTitle[SFB_NAME_CHARS + 80];
+static CONST CHAR16 *StatusLine;
 static UINTN DrawnRows;
+static UINTN ImagePosition;
 static EFI_DEVICE_PATH_PROTOCOL *ExpectedPath;
+static CONST CHAR16 *ExpectedArgs;
 
 UINTN EFIAPI __StrLen (CONST CHAR16 *Text) {
   UINTN Size = 0;
@@ -44,6 +54,7 @@ RETURN_STATUS EFIAPI __StrnCpyS (CHAR16 *Out, UINTN Size, CONST CHAR16 *Text, UI
 RETURN_STATUS EFIAPI __StrCpyS (CHAR16 *Out, UINTN Size, CONST CHAR16 *Text) {
   return __StrnCpyS (Out, Size, Text, StrLen (Text));
 }
+UINTN EFIAPI __AsciiStrLen (CONST CHAR8 *Text) { return strlen (Text); }
 
 INTN EFIAPI StrnCmp (CONST CHAR16 *A, CONST CHAR16 *B, UINTN Count) {
   for (UINTN Index = 0; Index < Count; Index++) {
@@ -53,9 +64,11 @@ INTN EFIAPI StrnCmp (CONST CHAR16 *A, CONST CHAR16 *B, UINTN Count) {
   return 0;
 }
 INTN EFIAPI StrCmp (CONST CHAR16 *A, CONST CHAR16 *B) { return StrnCmp (A, B, MAX_UINTN); }
+VOID *EFIAPI AllocatePool (UINTN Size) { return malloc (Size); }
 VOID *EFIAPI AllocateZeroPool (UINTN Size) { return calloc (1, Size); }
 VOID EFIAPI FreePool (VOID *Buffer) { free (Buffer); }
 VOID *EFIAPI CopyMem (VOID *Out, CONST VOID *In, UINTN Size) { return memmove (Out, In, Size); }
+VOID *EFIAPI ZeroMem (VOID *Out, UINTN Size) { return memset (Out, 0, Size); }
 VOID *EFIAPI SetMem (VOID *Out, UINTN Size, UINT8 Value) { return memset (Out, Value, Size); }
 INTN EFIAPI CompareMem (CONST VOID *A, CONST VOID *B, UINTN Size) { return memcmp (A, B, Size); }
 
@@ -86,9 +99,10 @@ UINTN EFIAPI UnicodeSPrint (CHAR16 *Out, UINTN Bytes, CONST CHAR16 *Format, ...)
   return Count;
 }
 
-VOID AtUiSetStatusLine (CONST CHAR16 *Text) { (void)Text; }
+VOID AtUiSetStatusLine (CONST CHAR16 *Text) { StatusLine = Text; }
 VOID AtUiBeginScreen (CONST CHAR16 *Title, CONST CHAR16 *Subtitle) {
-  (void)Title; (void)Subtitle; DrawnRows = 0; memset (Markers, 0, sizeof (Markers));
+  (void)Subtitle; StrCpyS (DrawnTitle, ARRAY_SIZE (DrawnTitle), Title);
+  DrawnRows = 0; memset (Markers, 0, sizeof (Markers));
 }
 VOID AtUiEndScreen (CONST CHAR16 *Footer) { (void)Footer; }
 VOID AtUiDrawRow (BOOLEAN Selected, CONST CHAR16 *Marker, CONST CHAR16 *Text) {
@@ -120,7 +134,7 @@ static EFI_STATUS EFIAPI read_key (EFI_SIMPLE_TEXT_INPUT_PROTOCOL *This, EFI_INP
 static EFI_STATUS EFIAPI device_state (VOID *This, vb_device_state_op_t Operation, UINT8 *Buffer, UINT32 Size) {
   assert (This == &VerifiedBoot && Size == sizeof (Device));
   if (Operation == READ_CONFIG) memcpy (Buffer, &Device, Size);
-  else { assert (Confirmations == 3); DeviceWrites++; memcpy (&Device, Buffer, Size); }
+  else { assert (Confirmations >= 3); DeviceWrites++; memcpy (&Device, Buffer, Size); }
   return EFI_SUCCESS;
 }
 static EFI_STATUS EFIAPI locate_protocol (EFI_GUID *Guid, VOID *Registration, VOID **Interface) {
@@ -128,29 +142,93 @@ static EFI_STATUS EFIAPI locate_protocol (EFI_GUID *Guid, VOID *Registration, VO
   if (Guid != &gEfiQcomVerifiedBootProtocolGuid) return EFI_NOT_FOUND;
   *Interface = &VerifiedBoot; return EFI_SUCCESS;
 }
+static EFI_STATUS EFIAPI handle_protocol (EFI_HANDLE Handle, EFI_GUID *Guid, VOID **Interface) {
+  (void)Handle; (void)Guid; (void)Interface; return EFI_NOT_FOUND;
+}
+static EFI_STATUS EFIAPI open_protocol (EFI_HANDLE Handle, EFI_GUID *Guid, VOID **Interface,
+                                        EFI_HANDLE Agent, EFI_HANDLE Controller, UINT32 Attributes) {
+  (void)Handle; (void)Agent; (void)Controller; (void)Attributes;
+  assert (Guid == &gEfiLoadedImageProtocolGuid); *Interface = &Loaded; return EFI_SUCCESS;
+}
 static EFI_STATUS EFIAPI load_image (BOOLEAN Policy, EFI_HANDLE Parent, EFI_DEVICE_PATH_PROTOCOL *Path,
-                                    VOID *Buffer, UINTN Size, EFI_HANDLE *Handle) {
-  (void)Policy; (void)Parent; (void)Buffer; (void)Size; (void)Handle;
-  assert (Path == ExpectedPath);
-  assert (Confirmations == ConfirmationsAtLoad);
-  Loads++;
-  return EFI_NOT_FOUND;
+                                     VOID *Buffer, UINTN Size, EFI_HANDLE *Handle) {
+  (void)Policy; (void)Parent; (void)Buffer; (void)Size;
+  assert (Path == ExpectedPath); Loads++; *Handle = &Loaded; return EFI_SUCCESS;
+}
+static EFI_STATUS EFIAPI start_image (EFI_HANDLE Handle, UINTN *ExitSize, CHAR16 **ExitData) {
+  (void)ExitSize; (void)ExitData; assert (Handle == &Loaded); Starts++;
+  if (ExpectedArgs != NULL) assert (StrCmp (Loaded.LoadOptions, ExpectedArgs) == 0);
+  return EFI_SUCCESS;
 }
 
-EFI_STATUS SfbSecurityVerifyImage (CONST VOID *Buffer, UINTN Size) {
-  (void)Buffer;
-  (void)Size;
-  return EFI_SECURITY_VIOLATION;
+static EFI_STATUS EFIAPI close_file (EFI_FILE_PROTOCOL *This) { (void)This; return EFI_SUCCESS; }
+static EFI_STATUS EFIAPI open_volume (EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *This, EFI_FILE_PROTOCOL **Out) {
+  assert (This == &Fs); *Out = &Root; return EFI_SUCCESS;
+}
+EFI_STATUS SfbConfigStoreGetFs (EFI_SIMPLE_FILE_SYSTEM_PROTOCOL **Out, EFI_HANDLE *Volume) {
+  if (Out != NULL) *Out = &Fs;
+  if (Volume != NULL) *Volume = &Fs;
+  return EFI_SUCCESS;
+}
+EFI_STATUS SfbReadFileBytes (EFI_FILE_PROTOCOL *This, CONST CHAR16 *Path, VOID *Buffer, UINTN Max, UINTN *Size) {
+  assert (This == &Root && StrCmp (Path, SFB_BOOT_OPTIONS_PATH) == 0 && Max >= 11);
+  *Size = 11; memcpy (Buffer, OptionsRecord, *Size); return EFI_SUCCESS;
+}
+EFI_STATUS SfbOpenVolumeRoot (EFI_HANDLE Volume, EFI_FILE_PROTOCOL **Out) {
+  assert (Volume != NULL); ImageOpens++; *Out = &Root; return EFI_SUCCESS;
+}
+EFI_STATUS SfbSecurityVerifyImage (CONST VOID *Buffer, UINTN Size) { assert (Buffer && Size == 8); return EFI_SUCCESS; }
+EFI_STATUS SfbPatchBootImage (VOID *Buffer, UINTN Size, CONST SFB_BOOT_OPTIONS *Options) {
+  (void)Options; assert (Buffer && Size == 8); return EFI_SUCCESS;
+}
+static EFI_STATUS EFIAPI open_file (EFI_FILE_PROTOCOL *This, EFI_FILE_PROTOCOL **Out,
+                                    CHAR16 *Path, UINT64 Mode, UINT64 Attributes) {
+  (void)Attributes; assert (This == &Root);
+  if (Mode == EFI_FILE_MODE_READ) {
+    *Out = &ImageFile; ImagePosition = 0; return EFI_SUCCESS;
+  }
+  if (!(Mode & EFI_FILE_MODE_CREATE) && StrCmp (Path, SFB_STORE_TEMP_PATH) != 0 &&
+      StrCmp (Path, SFB_BOOT_OPTIONS_TEMP) != 0) return EFI_NOT_FOUND;
+  StrCpyS (FilePath, ARRAY_SIZE (FilePath), Path); *Out = &File; return EFI_SUCCESS;
+}
+static EFI_STATUS EFIAPI write_file (EFI_FILE_PROTOCOL *This, UINTN *Size, VOID *Buffer) {
+  assert (This == &File); Writes++;
+  if (EFI_ERROR (WriteStatus)) return WriteStatus;
+  if (StrCmp (FilePath, SFB_BOOT_OPTIONS_TEMP) == 0) {
+    assert (*Size == 11); memcpy (OptionsRecord, Buffer, *Size);
+  } else {
+    assert (*Size < sizeof (EntriesRecord)); memcpy (EntriesRecord, Buffer, *Size); EntriesRecord[*Size] = 0;
+  }
+  return EFI_SUCCESS;
+}
+static EFI_STATUS EFIAPI get_info (EFI_FILE_PROTOCOL *This, EFI_GUID *Guid, UINTN *Size, VOID *Buffer) {
+  assert (This == &File && Guid == &gEfiFileInfoGuid);
+  if (Buffer == NULL) { *Size = SIZE_OF_EFI_FILE_INFO + 256; return EFI_BUFFER_TOO_SMALL; }
+  memset (Buffer, 0, *Size); return EFI_SUCCESS;
+}
+static EFI_STATUS EFIAPI set_info (EFI_FILE_PROTOCOL *This, EFI_GUID *Guid, UINTN Size, VOID *Buffer) {
+  (void)Size; (void)Buffer; assert (This == &File && Guid == &gEfiFileInfoGuid); return EFI_SUCCESS;
+}
+static EFI_STATUS EFIAPI set_position (EFI_FILE_PROTOCOL *This, UINT64 Position) {
+  assert (This == &ImageFile); ImagePosition = Position == MAX_UINT64 ? 8 : Position; return EFI_SUCCESS;
+}
+static EFI_STATUS EFIAPI get_position (EFI_FILE_PROTOCOL *This, UINT64 *Position) {
+  assert (This == &ImageFile); *Position = ImagePosition; return EFI_SUCCESS;
+}
+static EFI_STATUS EFIAPI read_file (EFI_FILE_PROTOCOL *This, UINTN *Size, VOID *Buffer) {
+  assert (This == &ImageFile && ImagePosition + *Size <= 8); memset (Buffer, 0, *Size); ImagePosition += *Size; return EFI_SUCCESS;
 }
 
 static void reset (void) {
   KeyCount = KeyIndex = Confirmations = Stalls = Resets = 0;
-  Loads = DeviceWrites = Reports = ConfirmationsAtLoad = 0;
-  ResetStatus = WaitStatus = EFI_SUCCESS;
-  ExpectedPath = NULL;
+  ImageOpens = Loads = Starts = Writes = DeviceWrites = Reports = 0;
+  ResetStatus = WaitStatus = WriteStatus = EFI_SUCCESS;
+  memset (&Loaded, 0, sizeof (Loaded));
+  memset (EntriesRecord, 0, sizeof (EntriesRecord));
+  memcpy (OptionsRecord, "SFBO2|0|1|0", sizeof (OptionsRecord));
   mSubmenuInputPending = FALSE;
+  ExpectedArgs = NULL;
 }
-
 static void keys (UINTN ConfirmCount, SFB_KEY Last) {
   for (UINTN Index = 0; Index < ConfirmCount; Index++) Keys[KeyCount++] = SfbKeySelect;
   if (Last != SfbKeyTimeout) Keys[KeyCount++] = Last;
@@ -166,110 +244,114 @@ static void boot_list (void) {
   make_entry (&List->Entry[1], L"Android", L"\\efisp\\boot.efi", 2);
   make_entry (&List->Entry[2], L"Android backup", L"\\efisp\\boot_backup.efi", 3);
   make_entry (&List->Entry[3], L"Custom real state", L"\\EFISP\\BOOT_NORMAL.EFI", 4);
+  StrCpyS (List->Entry[3].Spec.Args, SFB_ARGS_CHARS, L"real-state");
 }
 
 static void check_boot_launch (void) {
   SFB_ENTRY_LIST *List = SfbEntries ();
-  BOOLEAN NotPeImage;
-
-  boot_list ();
   for (UINTN Step = 0; Step < 3; Step++) {
     for (SFB_KEY Cancel = SfbKeyUp; Cancel <= SfbKeyDown; Cancel++) {
-      reset ();
-      keys (Step, Cancel);
-      NotPeImage = TRUE;
-      assert (SfbLaunchEntry (&List->Entry[3], TRUE, &NotPeImage) == EFI_ABORTED);
-      assert (Confirmations == Step && Loads == 0 && !NotPeImage);
+      reset (); boot_list (); keys (Step, Cancel);
+      assert (SfbLaunchEntry (&List->Entry[3], TRUE, NULL) == EFI_ABORTED);
+      assert (ImageOpens == 0 && Loads == 0 && Writes == 0 && Starts == 0);
+      assert (SfbGetBootMode (&List->Entry[1].Spec) == SfbBootModeFakeLocked);
     }
   }
+  reset (); boot_list (); keys (3, SfbKeyTimeout); ExpectedPath = List->Entry[3].DevicePath; ExpectedArgs = L"real-state";
+  assert (SfbLaunchEntry (&List->Entry[3], TRUE, NULL) == EFI_SUCCESS);
+  assert (Confirmations == 3 && Resets == 3 && ImageOpens == 1 && Writes == 1 && Loads == 1 && Starts == 1);
+  assert (SfbGetBootMode (&List->Entry[1].Spec) == SfbBootModeRealState);
+  assert (List->Entry[0].DevicePath == (VOID *)1 && List->Entry[2].DevicePath == (VOID *)3);
+  assert (strstr (EntriesRecord, "BOOT_NORMAL.EFI") < strstr (EntriesRecord, "boot.efi"));
+  reset (); keys (3, SfbKeyTimeout); ExpectedPath = List->Entry[3].DevicePath;
+  assert (SfbLaunchEntry (&List->Entry[3], TRUE, NULL) == EFI_SUCCESS);
+  assert (SfbGetBootMode (&List->Entry[1].Spec) == SfbBootModeFakeLocked && Writes == 1);
 
-  for (UINTN Index = 1; Index < List->Count; Index++) {
-    reset ();
-    keys (3, SfbKeyTimeout);
-    ExpectedPath = List->Entry[Index].DevicePath;
-    ConfirmationsAtLoad = 3;
-    assert (SfbLaunchEntry (&List->Entry[Index], TRUE, NULL) == EFI_NOT_FOUND);
-    assert (Loads == 1 && Resets == 3 && Stalls == 3);
-  }
+  reset (); boot_list (); keys (3, SfbKeyTimeout); WriteStatus = EFI_DEVICE_ERROR;
+  assert (SfbLaunchEntry (&List->Entry[3], TRUE, NULL) == EFI_ABORTED);
+  assert (Loads == 0 && Starts == 0 && Reports == 1);
+  assert (SfbGetBootMode (&List->Entry[1].Spec) == SfbBootModeFakeLocked);
+  reset (); keys (3, SfbKeyTimeout); ExpectedPath = List->Entry[2].DevicePath;
+  assert (SfbLaunchEntry (&List->Entry[2], TRUE, NULL) == EFI_SUCCESS && Writes == 0);
+  reset (); ExpectedPath = List->Entry[1].DevicePath;
+  assert (SfbLaunchEntry (&List->Entry[1], FALSE, NULL) == EFI_SUCCESS);
+  assert (KeyIndex == 0 && Writes == 0 && Loads == 1);
+  reset (); ResetStatus = EFI_DEVICE_ERROR;
+  assert (SfbLaunchEntry (&List->Entry[3], TRUE, NULL) == EFI_ABORTED && Reports == 1 && Loads == 0);
 
-  reset ();
-  ResetStatus = EFI_DEVICE_ERROR;
-  assert (SfbLaunchEntry (&List->Entry[1], TRUE, NULL) == EFI_ABORTED);
-  assert (Reports == 1 && Loads == 0 && KeyIndex == 0);
-
-  reset ();
-  WaitStatus = EFI_DEVICE_ERROR;
-  assert (SfbLaunchEntry (&List->Entry[1], TRUE, NULL) == EFI_ABORTED);
-  assert (Reports == 1 && Loads == 0 && KeyIndex == 0);
-
-  reset ();
-  ExpectedPath = List->Entry[0].DevicePath;
-  assert (SfbLaunchEntry (&List->Entry[0], TRUE, NULL) == EFI_NOT_FOUND);
-  assert (Loads == 1 && Resets == 0 && KeyIndex == 0);
-
-  reset ();
+  reset (); boot_list ();
+  BOOLEAN BootModeTried = FALSE, NotPeImage = FALSE;
   ExpectedPath = List->Entry[1].DevicePath;
-  assert (SfbLaunchEntry (&List->Entry[1], FALSE, NULL) == EFI_NOT_FOUND);
-  assert (Loads == 1 && Resets == 0 && KeyIndex == 0);
+  assert (SfbStartupLaunch (&List->Entry[2], &NotPeImage, &BootModeTried) == EFI_ABORTED);
+  assert (!BootModeTried && Loads == 0);
+  assert (SfbStartupLaunch (&List->Entry[1], &NotPeImage, &BootModeTried) == EFI_SUCCESS);
+  assert (SfbStartupLaunch (&List->Entry[3], &NotPeImage, &BootModeTried) == EFI_ABORTED);
+  assert (SfbStartupLaunch (&List->Entry[2], &NotPeImage, &BootModeTried) == EFI_ABORTED);
+  assert (!NotPeImage && Loads == 1 && Writes == 0 && KeyIndex == 0);
+}
+
+static void check_menu_title (void) {
+  CHAR16 Expected[SFB_NAME_CHARS + 80];
+
+  Device.is_unlocked = TRUE;
+  AtUiSetStatusLine (L"旧状态栏");
+  SfbBeginScreen (NULL, NULL);
+  assert (StrCmp (DrawnTitle, L"假回锁-已解锁") == 0 && StatusLine == NULL);
+  SfbBeginScreen (L"启动方式", NULL);
+  assert (StrCmp (DrawnTitle, L"启动方式-已解锁") == 0 && StatusLine == NULL);
+  Device.is_unlocked = FALSE;
+  SfbBeginScreen (NULL, NULL);
+  assert (StrCmp (DrawnTitle, L"假回锁-未解锁") == 0 && StatusLine == NULL);
+
+  Device.is_unlocked = 2;
+  SfbBeginScreen (NULL, NULL);
+  UnicodeSPrint (Expected, sizeof (Expected), L"假回锁-BL 真实状态：读取失败（0x%lx）",
+                  (UINT64)EFI_VOLUME_CORRUPTED);
+  assert (StrCmp (DrawnTitle, Expected) == 0 && StatusLine == NULL);
+  Device.is_unlocked = FALSE;
 }
 
 static void check_markers (void) {
   SFB_MENU_ROW Rows[SFB_MAX_MENU_ROWS];
   SFB_ENTRY_LIST *List = SfbEntries ();
-  UINTN Count, Default;
-
-  reset ();
-  boot_list ();
-  Count = SfbBuildRows (List, L"Boot Modes", Rows);
-  Default = SfbDefaultBootModeIndex (List);
-  assert (Default == 1);
-  for (UINTN Cursor = 0; Cursor < 2; Cursor++) {
-    SfbDrawMenu (Rows, Count, Cursor, Default, L"启动方式");
-    assert (Markers[0] == L'✓' && Markers[1] == L' ');
-  }
-
-  make_entry (&List->Entry[1], L"其他程序", L"\\other.efi", 2);
-  assert (SfbDefaultBootModeIndex (List) == 3);
-  List->Count = 3;
-  assert (SfbDefaultBootModeIndex (List) == SFB_NO_INDEX);
+  reset (); boot_list ();
+  UINTN Count = SfbBuildRows (List, L"Boot Modes", Rows);
+  SfbDrawMenu (Rows, Count, 1, SfbDefaultBootModeIndex (List), L"启动方式");
+  assert (Markers[0] == L'✓' && Markers[1] == L' ');
+  keys (0, SfbKeyUp); keys (1, SfbKeyTimeout);
+  SfbRunBootOptions ();
+  assert (Markers[0] == L' ' && Markers[1] == L'✓' && Markers[2] == L' ');
+  reset (); keys (1, SfbKeyUp); keys (1, SfbKeyTimeout);
+  SfbRunBootOptions ();
+  assert (Markers[0] == L'✓' && Markers[1] == L'✓' && OptionsRecord[6] == '1');
+  reset (); WriteStatus = EFI_DEVICE_ERROR; keys (1, SfbKeyUp); keys (1, SfbKeyTimeout);
+  SfbRunBootOptions ();
+  assert (Markers[0] == L' ' && Reports == 1 && OptionsRecord[6] == '0');
 }
 
 static void check_bl_write (void) {
   DeviceInfo Info = {0};
-  Info.is_unlocked = TRUE;
   for (UINTN Step = 0; Step < 3; Step++) {
-    for (SFB_KEY Cancel = SfbKeyUp; Cancel <= SfbKeyDown; Cancel++) {
-      reset ();
-      keys (Step, Cancel);
-      BlApply (&Info, FALSE, FALSE, L"锁定设备");
-      assert (DeviceWrites == 0 && Info.is_unlocked && Confirmations == Step);
-    }
+    reset (); keys (Step, SfbKeyDown); BlApply (&Info, TRUE, FALSE, L"解锁设备");
+    assert (DeviceWrites == 0 && !Info.is_unlocked);
   }
-  reset ();
-  ResetStatus = EFI_DEVICE_ERROR;
-  BlApply (&Info, FALSE, FALSE, L"锁定设备");
+  reset (); keys (4, SfbKeyTimeout); BlApply (&Info, TRUE, FALSE, L"解锁设备");
+  assert (DeviceWrites == 1 && Info.is_unlocked && Confirmations == 4);
+  reset (); ResetStatus = EFI_DEVICE_ERROR; BlApply (&Info, FALSE, FALSE, L"锁定设备");
   assert (DeviceWrites == 0 && Info.is_unlocked && Reports == 1);
-
-  reset ();
-  keys (3, SfbKeyDown);
-  BlApply (&Info, FALSE, FALSE, L"锁定设备");
-  assert (DeviceWrites == 1 && !Info.is_unlocked && Confirmations == 3 && Resets == 3);
 }
 
 int main (void) {
-  BootServices.Stall = stall;
-  BootServices.WaitForEvent = wait_event;
-  BootServices.LocateProtocol = locate_protocol;
-  BootServices.LoadImage = load_image;
-  Input.Reset = reset_input;
-  Input.ReadKeyStroke = read_key;
-  SystemTable.ConIn = &Input;
-  VerifiedBoot.VBRwDeviceState = device_state;
-  memcpy (Device.magic, DEVICE_MAGIC, DEVICE_MAGIC_SIZE);
-  check_boot_launch ();
-  check_markers ();
-  check_bl_write ();
+  BootServices.Stall = stall; BootServices.WaitForEvent = wait_event; BootServices.LocateProtocol = locate_protocol;
+  BootServices.HandleProtocol = handle_protocol; BootServices.OpenProtocol = open_protocol;
+  BootServices.LoadImage = load_image; BootServices.StartImage = start_image;
+  Input.Reset = reset_input; Input.ReadKeyStroke = read_key; SystemTable.ConIn = &Input;
+  VerifiedBoot.VBRwDeviceState = device_state; memcpy (Device.magic, DEVICE_MAGIC, DEVICE_MAGIC_SIZE);
+  Fs.OpenVolume = open_volume; Root.Open = open_file; Root.Close = Root.Flush = close_file;
+  File.Close = File.Flush = File.Delete = close_file; File.Write = write_file; File.GetInfo = get_info; File.SetInfo = set_info;
+  ImageFile.Close = close_file; ImageFile.SetPosition = set_position; ImageFile.GetPosition = get_position; ImageFile.Read = read_file;
+  check_menu_title (); check_boot_launch (); check_markers (); check_bl_write ();
   FreePool (mSfbEntries);
-  puts ("手动启动和 BL 状态修改的三次确认、取消保护及默认启动项标记测试通过");
+  puts ("标题合并真实 BL 状态、启动方式确认与保存、选项勾选和 BL 写入确认测试通过");
   return 0;
 }

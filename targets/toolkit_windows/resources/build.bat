@@ -18,10 +18,13 @@ if not exist "bin\patch_abl.exe" (
 if not exist "efisp\" mkdir "efisp"
 
 REM Never reuse a loader or patched image left by an earlier run.
-del /q "extracted\LinuxLoader.efi" "ABL_original.efi" "efisp\boot.efi" "patch_log.txt" 2>nul
+del /q "extracted\LinuxLoader.efi" "ABL_original.efi" "efisp\boot.efi" "efisp\boot_normal.efi" "efisp\boot.efi.pending" "efisp\boot_normal.efi.pending" "patch_log.txt" 2>nul
 if exist "extracted\LinuxLoader.efi" goto :cleanup_failed
 if exist "ABL_original.efi" goto :cleanup_failed
 if exist "efisp\boot.efi" goto :cleanup_failed
+if exist "efisp\boot_normal.efi" goto :cleanup_failed
+if exist "efisp\boot.efi.pending" goto :cleanup_failed
+if exist "efisp\boot_normal.efi.pending" goto :cleanup_failed
 if exist "patch_log.txt" goto :cleanup_failed
 
 "bin\extractfv.exe" "images\abl.img"
@@ -38,18 +41,39 @@ if errorlevel 1 (
   echo ERROR: Cannot save ABL_original.efi.
   goto :fail
 )
-"bin\patch_abl.exe" "ABL_original.efi" "efisp\boot.efi" > "patch_log.txt" 2>&1
+"bin\patch_abl.exe" "ABL_original.efi" "efisp\boot.efi.pending" fake_locked --defer-fastboot > "patch_log.txt" 2>&1
 if errorlevel 1 (
   type "patch_log.txt"
-  if exist "efisp\boot.efi" del /q "efisp\boot.efi"
   echo ERROR: patch_abl failed
   goto :fail
 )
-type "patch_log.txt"
-if not exist "efisp\boot.efi" (
-  echo ERROR: patch_abl produced no efisp/boot.efi
+if not exist "efisp\boot.efi.pending" (
+  echo ERROR: patch_abl produced no efisp/boot.efi.pending
   goto :fail
 )
+for %%F in ("efisp\boot.efi.pending") do if %%~zF EQU 0 (
+  echo ERROR: patch_abl produced an empty efisp/boot.efi.pending
+  goto :fail
+)
+"bin\patch_abl.exe" "ABL_original.efi" "efisp\boot_normal.efi.pending" normal --defer-fastboot >> "patch_log.txt" 2>&1
+if errorlevel 1 (
+  type "patch_log.txt"
+  echo ERROR: patch_abl failed
+  goto :fail
+)
+if not exist "efisp\boot_normal.efi.pending" (
+  echo ERROR: patch_abl produced no efisp/boot_normal.efi.pending
+  goto :fail
+)
+for %%F in ("efisp\boot_normal.efi.pending") do if %%~zF EQU 0 (
+  echo ERROR: patch_abl produced an empty efisp/boot_normal.efi.pending
+  goto :fail
+)
+type "patch_log.txt"
+move /Y "efisp\boot_normal.efi.pending" "efisp\boot_normal.efi" >nul
+if errorlevel 1 goto :fail
+move /Y "efisp\boot.efi.pending" "efisp\boot.efi" >nul
+if errorlevel 1 goto :fail
 
 set "GBL_OK=yes"
 findstr /C:"Warning: Failed to patch ABL GBL" "patch_log.txt" >nul && (
@@ -65,6 +89,7 @@ findstr /C:"Warning: Failed to patch ABL GBL" "patch_log.txt" >nul && (
 echo.
 echo ========================================
 echo Patched. Outputs:
+echo   efisp/boot_normal.efi - 原始 BL 真实状态透传
 echo   efisp/boot.efi     - cracked ABL loader ^(fake re-lock^), the ANDROID boot entry
 echo   ENTRIES.CFG        - boot entry list ^(copy to the persist volume root^)
 echo   efisp/tools/       - tools submenu ^(Reboot / BL / ARB tools^)
@@ -113,5 +138,7 @@ exit /b 0
 echo ERROR: Cannot remove previous output files. Check file permissions.
 
 :fail
+if exist "efisp\boot.efi.pending" del /q "efisp\boot.efi.pending"
+if exist "efisp\boot_normal.efi.pending" del /q "efisp\boot_normal.efi.pending"
 popd
 exit /b 1

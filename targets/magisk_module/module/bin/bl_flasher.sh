@@ -6,6 +6,7 @@ if [ -z "$MODDIR" ]; then
   echo 'ERROR=MODDIR detection failed' >&2
   exit 1
 fi
+. "$MODDIR/bin/boot_modes.sh"
 
 LANG=zh
 if [ -f "$MODDIR/lang.txt" ]; then
@@ -163,10 +164,10 @@ persist_mounted() { grep -q " $PERSIST_MNT " /proc/mounts; }
 
 # Lay out the \efisp boot root from the bundled module efisp/ tree: the tools/
 # directory and its EFI applets. ENTRIES.CFG is copied separately to the volume
-# root; its lines use absolute paths on that volume. boot.efi / boot_backup.efi
+# root; its lines use absolute paths on that volume. boot.efi / boot_normal.efi / boot_backup.efi
 # are generated at runtime and are not part of the bundle, so they are preserved.
 place_efisp_tree_to() {
-  cp -r "$MODDIR/efisp/." "$1/" >> "$LOG_FILE" 2>&1
+  cp -r "$MODDIR/efisp/." "$1/" >> "$LOG_FILE" 2>&1 || return 1
   cp "$MODDIR/ENTRIES.CFG" "$1/../ENTRIES.CFG" >> "$LOG_FILE" 2>&1
 }
 
@@ -185,15 +186,21 @@ place_efisp_tree_to() {
 update_efisp() {
   abl=$1
   is_debug=$2
-  rm -f $RUNTIME_DIR/*
-  $MODDIR/bin/extractfv -o $RUNTIME_DIR -v "$abl" >> "$LOG_FILE" 2>&1
-  $MODDIR/bin/patch_abl $RUNTIME_DIR/LinuxLoader.efi $RUNTIME_DIR/patched.efi >> $RUNTIME_DIR/patch.log 2>&1
-  cat $RUNTIME_DIR/patch.log >> "$LOG_FILE"
-  [ -f $RUNTIME_DIR/patched.efi ] || { write_log "$TEXT_PATCH_FAILED"; return 1; }
+  rm -f "$RUNTIME_DIR/LinuxLoader.efi" || return 1
+  if ! "$MODDIR/bin/extractfv" -o "$RUNTIME_DIR" -v "$abl" >> "$LOG_FILE" 2>&1; then
+    write_log "$TEXT_EXTRACT_FAILED"
+    return 1
+  fi
+  if ! build_boot_modes "$MODDIR/bin/patch_abl" "$RUNTIME_DIR/LinuxLoader.efi" "$RUNTIME_DIR"; then
+    cat "$RUNTIME_DIR/patch.log" >> "$LOG_FILE" 2>/dev/null
+    write_log "$TEXT_PATCH_FAILED"
+    return 1
+  fi
+  cat "$RUNTIME_DIR/patch.log" >> "$LOG_FILE"
 
   # The optional GBL patch (efisp -> nulls rename) succeeds only when the ABL
   # actually loads efisp; its warning is therefore the vuln indicator.
-  if grep -q "Warning: Failed to patch ABL GBL" $RUNTIME_DIR/patch.log; then
+  if grep -q "Warning: Failed to patch ABL GBL" "$RUNTIME_DIR/patch.log"; then
     gbl_vuln=0
   else
     gbl_vuln=1
@@ -212,18 +219,13 @@ update_efisp() {
 
   mkdir -p "$efisp_target" >> "$LOG_FILE" 2>&1 || { write_log "$TEXT_EFISP_MKDIR_FAILED"; return 1; }
 
-  # Keep the previous boot.efi around as a one-level backup. Skipped in debug,
-  # where the staging dir is freshly emptied.
-  if [ "$is_debug" != "yes" ] && [ -f "$efisp_target/boot.efi" ]; then
-    mv "$efisp_target/boot.efi" "$efisp_target/boot_backup.efi" >> "$LOG_FILE" 2>&1
-    write_log "$TEXT_BACKUP_BOOT"
-  fi
-
-  if ! cp $RUNTIME_DIR/patched.efi "$efisp_target/boot.efi" >> "$LOG_FILE" 2>&1; then
+  backup=yes
+  [ "$is_debug" = yes ] && backup=no
+  if ! install_boot_modes "$RUNTIME_DIR" "$efisp_target" "$backup" >> "$LOG_FILE" 2>&1; then
     write_log "$TEXT_EFISP_WRITE_FAILED"
     return 1
   fi
-  place_efisp_tree_to "$efisp_target"
+  place_efisp_tree_to "$efisp_target" || { write_log "$TEXT_EFISP_WRITE_FAILED"; return 1; }
   sync
   write_log "$TEXT_EFISP_FILES_OK"
 
@@ -250,12 +252,18 @@ update_efisp() {
 }
 
 detect_gbl_vulnerability() {
-  rm -f $RUNTIME_DIR/*
-  $MODDIR/bin/extractfv -o $RUNTIME_DIR -v "$1" >> "$LOG_FILE" 2>&1
-  $MODDIR/bin/patch_abl $RUNTIME_DIR/LinuxLoader.efi $RUNTIME_DIR/patched.efi >> $RUNTIME_DIR/patch.log 2>&1
-  cat $RUNTIME_DIR/patch.log >> "$LOG_FILE"
-  [ -f $RUNTIME_DIR/patched.efi ] || { write_log "$TEXT_PATCH_FAILED"; return 1; }
-  if ! grep -q "Warning: Failed to patch ABL GBL" $RUNTIME_DIR/patch.log; then
+  rm -f "$RUNTIME_DIR/LinuxLoader.efi" || return 1
+  if ! "$MODDIR/bin/extractfv" -o "$RUNTIME_DIR" -v "$1" >> "$LOG_FILE" 2>&1; then
+    write_log "$TEXT_EXTRACT_FAILED"
+    return 1
+  fi
+  if ! build_boot_modes "$MODDIR/bin/patch_abl" "$RUNTIME_DIR/LinuxLoader.efi" "$RUNTIME_DIR"; then
+    cat "$RUNTIME_DIR/patch.log" >> "$LOG_FILE" 2>/dev/null
+    write_log "$TEXT_PATCH_FAILED"
+    return 1
+  fi
+  cat "$RUNTIME_DIR/patch.log" >> "$LOG_FILE"
+  if ! grep -q "Warning: Failed to patch ABL GBL" "$RUNTIME_DIR/patch.log"; then
     write_log "$TEXT_GBL_VULN"
     return 0
   fi
@@ -321,7 +329,7 @@ update_bds_tools() {
   write_log "$TEXT_EFISP_FLASH_OK"
 
   # 2. Replace the bundled tools and update the volume-root ENTRIES.CFG.
-  place_efisp_tree_to "$EFISP_DIR"
+  place_efisp_tree_to "$EFISP_DIR" || { write_log "$TEXT_EFISP_WRITE_FAILED"; return 1; }
   sync
   write_log "$TEXT_EFISP_FILES_OK"
   return 0

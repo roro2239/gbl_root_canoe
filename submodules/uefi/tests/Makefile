@@ -5,14 +5,22 @@ CFLAGS := -std=c11 -g -Wall -Wextra -Werror -fshort-wchar -DMDEPKG_NDEBUG \
 	-fsanitize=address,undefined -I$(EDK2)/MdePkg/Include \
 	-I$(EDK2)/MdePkg/Include/X64 -I$(LOADER)
 
-.PHONY: test-ui test-settings test-menu
+.PHONY: test test-ui test-settings test-menu
+test:
+	@set -e; test_dir=$$(mktemp -d); \
+	trap 'rm -f "$$test_dir/test_boot_options"; rmdir "$$test_dir"' EXIT; \
+	$(CC) $(CFLAGS) test_boot_options.c $(LOADER)/SuperFbBootPatches.c -o "$$test_dir/test_boot_options"; \
+	"$$test_dir/test_boot_options" $(IMAGES)
+
 test-ui:
 	@set -e; test_dir=$$(mktemp -d); \
 	trap 'rm -f "$$test_dir/test_banner_layout"; rmdir "$$test_dir"' EXIT; \
 	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections \
 		-I$(EDK2)/AndroidToolsPkg/Include test_banner_layout.c \
 		$(EDK2)/AndroidToolsPkg/Library/AndroidToolsUi/AndroidToolsUi.c \
-		-Wl,--gc-sections -o "$$test_dir/test_banner_layout"; \
+		$(EDK2)/AndroidToolsPkg/Library/AndroidToolsUi/MenuScreen.c \
+		-Wl,--gc-sections,--wrap=MenuScreenOpen,--wrap=MenuScreenClear,--wrap=MenuScreenLine \
+		-o "$$test_dir/test_banner_layout"; \
 	"$$test_dir/test_banner_layout"
 
 test-settings:

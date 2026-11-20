@@ -75,6 +75,8 @@
 	SuperFbEntryList.h
 	SuperFbEntryList.c
 	SuperFbEntries.c
+	SuperFbBootOptions.h
+	SuperFbBootPatches.c
 	SuperFbMenu.c
 	SuperFbTitle.c
 	SuperFbBrowser.c

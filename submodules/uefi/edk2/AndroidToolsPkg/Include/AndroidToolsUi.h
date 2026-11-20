@@ -19,9 +19,6 @@ typedef enum {
   AtKeySelect
 } AT_KEY;
 
-/* Rows of list content a screen shows before it starts scrolling. */
-#define AT_VISIBLE_ROWS  12
-
 /**
   Prepare the menu at application entry. The first AtUiWaitForKey waits for
   the launching key to be released after the complete menu has been drawn,
@@ -66,6 +63,7 @@ AtUiDrawRow (
   IN CONST CHAR16 *Text
   );
 
+/* 按屏幕可用高度计算当前页面的列表行数。 */
 UINTN
 AtUiVisibleRows (VOID);
 
