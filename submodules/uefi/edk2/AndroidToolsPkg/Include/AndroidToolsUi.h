@@ -72,7 +72,7 @@ AtUiDrawNote (IN CONST CHAR16 *Text);
 EFI_STATUS
 AtUiScreenStatus (VOID);
 
-/* 自动启动时只覆盖一行，保留已有的开机画面。 */
+/* 在屏幕顶部显示启动提示；ClearScreen 为 FALSE 时保留已有的开机画面。 */
 VOID
 AtUiShowBanner (IN CONST CHAR16 *Text, IN BOOLEAN ClearScreen);
 

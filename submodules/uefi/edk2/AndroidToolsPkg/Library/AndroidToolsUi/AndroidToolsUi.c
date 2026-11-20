@@ -57,9 +57,11 @@ AtUiScreenStatus (VOID)
   return mDrawStatus;
 }
 
-VOID
-AtUiShowBanner (IN CONST CHAR16 *Text, IN BOOLEAN ClearScreen)
+STATIC VOID
+ShowBanner (IN CONST CHAR16 *Text, IN BOOLEAN ClearScreen, IN BOOLEAN TopAligned)
 {
+  UINTN Top;
+
   mDrawStatus = EFI_SUCCESS;
   /* 返回菜单时，刚运行的固件程序可能已经切换了显示模式。 */
   if (mScreen.Graphics != NULL && mScreen.Graphics->Mode->Mode != mScreen.GraphicsMode) {
@@ -75,7 +77,20 @@ AtUiShowBanner (IN CONST CHAR16 *Text, IN BOOLEAN ClearScreen)
     DEBUG ((DEBUG_ERROR, "Menu: opening screen failed: %r\n", mDrawStatus));
     return;
   }
+  Top = mScreen.Top;
+  if (TopAligned) {
+    /* 启动提示使用顶部留白，避免菜单标题的位置遮挡原厂开机标志。 */
+    mScreen.Top = (mScreen.Graphics != NULL) ?
+                  mScreen.Graphics->Mode->Info->VerticalResolution / 16 : 1;
+  }
   DrawLine (0, MenuLineTitle, Text, MAX_UINTN);
+  mScreen.Top = Top;
+}
+
+VOID
+AtUiShowBanner (IN CONST CHAR16 *Text, IN BOOLEAN ClearScreen)
+{
+  ShowBanner (Text, ClearScreen, TRUE);
 }
 
 /* Seconds to wait for the key that launched us to be released before the
@@ -171,7 +186,7 @@ AtUiEnterMenu (
   IN CONST CHAR16 *Title
   )
 {
-  AtUiShowBanner ((Title != NULL) ? Title : L"菜单", TRUE);
+  ShowBanner ((Title != NULL) ? Title : L"菜单", TRUE, FALSE);
   if (EFI_ERROR (mDrawStatus)) {
     return mDrawStatus;
   }
@@ -192,7 +207,7 @@ AtUiBeginScreen (
   IN CONST CHAR16 *Subtitle
   )
 {
-  AtUiShowBanner (Title, TRUE);
+  ShowBanner (Title, TRUE, FALSE);
   mNextRow = 1;
   mVisibleRows = 0;
   if (EFI_ERROR (mDrawStatus)) {
@@ -299,7 +314,7 @@ AtUiShowMessage (
   IN CONST CHAR16 *Text
   )
 {
-  AtUiShowBanner ((Text != NULL) ? Text : L"", TRUE);
+  ShowBanner ((Text != NULL) ? Text : L"", TRUE, FALSE);
 }
 
 VOID
