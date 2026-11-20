@@ -908,7 +908,7 @@ SfbLaunchEntry (IN CONST SFB_BOOT_ENTRY *Entry,
     }
   }
 
-  /* 菜单启动时清屏，自动启动时在开机画面上显示启动项名称。 */
+  /* 按提示开关显示启动信息，菜单启动时先清除旧界面。 */
   SfbShowBootingScreen (SfbEntryDisplayName (&Entry->Spec, Entry->Spec.Name), ClearScreen);
 
   SfbLoadSecurityPolicy ();

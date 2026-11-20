@@ -244,8 +244,7 @@ VOID
 SfbShowEnteringMenu (VOID);
 
 /*
- * Display the entry name while the image loads. The optional boot details
- * add the progress text and the device's BL state.
+ * Display boot progress and the device's BL state when UI hints are enabled.
  *
  * When ClearScreen is TRUE the console is cleared first (menu launch); when
  * FALSE the current screen is left as-is (unattended default boot).

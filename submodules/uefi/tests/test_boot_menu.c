@@ -35,6 +35,8 @@ static CHAR16 Markers[8];
 static CHAR16 DrawnTitle[SFB_NAME_CHARS + 80];
 static CONST CHAR16 *StatusLine;
 static UINTN DrawnRows;
+static UINTN Banners;
+static BOOLEAN BannerCleared;
 static UINTN ImagePosition;
 static EFI_DEVICE_PATH_PROTOCOL *ExpectedPath;
 static CONST CHAR16 *ExpectedArgs;
@@ -110,7 +112,11 @@ VOID AtUiDrawRow (BOOLEAN Selected, CONST CHAR16 *Marker, CONST CHAR16 *Text) {
 }
 VOID AtUiDrawNote (CONST CHAR16 *Text) { (void)Text; }
 VOID AtUiShowMessage (CONST CHAR16 *Text) { (void)Text; }
-VOID AtUiShowBanner (CONST CHAR16 *Text, BOOLEAN Clear) { (void)Text; (void)Clear; }
+VOID AtUiShowBanner (CONST CHAR16 *Text, BOOLEAN Clear) {
+  StrCpyS (DrawnTitle, ARRAY_SIZE (DrawnTitle), Text);
+  Banners++;
+  BannerCleared = Clear;
+}
 VOID AtUiReportStatus (CONST CHAR16 *Text, EFI_STATUS Status) { (void)Text; assert (EFI_ERROR (Status)); Reports++; }
 EFI_STATUS AtUiScreenStatus (VOID) { return EFI_SUCCESS; }
 UINTN AtUiVisibleRows (VOID) { return 8; }
@@ -222,6 +228,8 @@ static EFI_STATUS EFIAPI read_file (EFI_FILE_PROTOCOL *This, UINTN *Size, VOID *
 static void reset (void) {
   KeyCount = KeyIndex = Confirmations = Stalls = Resets = 0;
   ImageOpens = Loads = Starts = Writes = DeviceWrites = Reports = 0;
+  Banners = 0;
+  BannerCleared = FALSE;
   ResetStatus = WaitStatus = WriteStatus = EFI_SUCCESS;
   memset (&Loaded, 0, sizeof (Loaded));
   memset (EntriesRecord, 0, sizeof (EntriesRecord));
@@ -260,6 +268,7 @@ static void check_boot_launch (void) {
   reset (); boot_list (); keys (3, SfbKeyTimeout); ExpectedPath = List->Entry[3].DevicePath; ExpectedArgs = L"real-state";
   assert (SfbLaunchEntry (&List->Entry[3], TRUE, NULL) == EFI_SUCCESS);
   assert (Confirmations == 3 && Resets == 3 && ImageOpens == 1 && Writes == 1 && Loads == 1 && Starts == 1);
+  assert (Banners == 1 && BannerCleared && DrawnTitle[0] == 0 && StatusLine == NULL);
   assert (SfbGetBootMode (&List->Entry[1].Spec) == SfbBootModeRealState);
   assert (List->Entry[0].DevicePath == (VOID *)1 && List->Entry[2].DevicePath == (VOID *)3);
   assert (strstr (EntriesRecord, "BOOT_NORMAL.EFI") < strstr (EntriesRecord, "boot.efi"));
@@ -288,6 +297,26 @@ static void check_boot_launch (void) {
   assert (SfbStartupLaunch (&List->Entry[3], &NotPeImage, &BootModeTried) == EFI_ABORTED);
   assert (SfbStartupLaunch (&List->Entry[2], &NotPeImage, &BootModeTried) == EFI_ABORTED);
   assert (!NotPeImage && Loads == 1 && Writes == 0 && KeyIndex == 0);
+}
+
+static void check_boot_hints (void) {
+  SFB_ENTRY_LIST *List = SfbEntries ();
+
+  reset (); boot_list ();
+  for (UINTN Index = 1; Index < List->Count; Index++) {
+    ExpectedPath = List->Entry[Index].DevicePath;
+    assert (SfbLaunchEntry (&List->Entry[Index], FALSE, NULL) == EFI_SUCCESS);
+    assert (Banners == 0 && StatusLine == NULL);
+  }
+  assert (Loads == 3 && Starts == 3 && Writes == 0 && KeyIndex == 0);
+
+  reset ();
+  OptionsRecord[10] = '1';
+  ExpectedPath = List->Entry[1].DevicePath;
+  assert (SfbLaunchEntry (&List->Entry[1], FALSE, NULL) == EFI_SUCCESS);
+  assert (Banners == 1 && !BannerCleared);
+  assert (StrCmp (DrawnTitle, L"正在启动 Android（假回锁）") == 0);
+  assert (StrCmp (StatusLine, L"BL 真实状态：已锁定") == 0);
 }
 
 static void check_menu_title (void) {
@@ -350,8 +379,8 @@ int main (void) {
   Fs.OpenVolume = open_volume; Root.Open = open_file; Root.Close = Root.Flush = close_file;
   File.Close = File.Flush = File.Delete = close_file; File.Write = write_file; File.GetInfo = get_info; File.SetInfo = set_info;
   ImageFile.Close = close_file; ImageFile.SetPosition = set_position; ImageFile.GetPosition = get_position; ImageFile.Read = read_file;
-  check_menu_title (); check_boot_launch (); check_markers (); check_bl_write ();
+  check_menu_title (); check_boot_hints (); check_boot_launch (); check_markers (); check_bl_write ();
   FreePool (mSfbEntries);
-  puts ("标题合并真实 BL 状态、启动方式确认与保存、选项勾选和 BL 写入确认测试通过");
+  puts ("关闭启动提示、标题合并真实 BL 状态、启动方式确认与保存、选项勾选和 BL 写入确认测试通过");
   return 0;
 }

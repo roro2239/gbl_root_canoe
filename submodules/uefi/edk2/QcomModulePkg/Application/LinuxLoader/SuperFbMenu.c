@@ -246,7 +246,13 @@ SfbShowBootingScreen (IN CONST CHAR16 *Name, IN BOOLEAN ClearScreen)
   if (EFI_ERROR (Status)) {
     UnicodeSPrint (ErrorText, sizeof (ErrorText), L"BL 真实状态：设置读取失败（0x%lx）", (UINT64)Status);
     Footer = ErrorText;
-  } else if (Options.ShowUiHints) {
+  } else if (!Options.ShowUiHints) {
+    AtUiSetStatusLine (NULL);
+    if (ClearScreen) {
+      AtUiShowBanner (L"", TRUE);
+    }
+    return;
+  } else {
     UnicodeSPrint (Text, sizeof (Text), L"正在启动 %s", Title);
     Title = Text;
     Footer = SfbBlStateText (FALSE);
