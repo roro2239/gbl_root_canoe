@@ -23,10 +23,9 @@ typedef enum {
 #define AT_VISIBLE_ROWS  12
 
 /**
-  Announce the menu and wait for the launching key to be released, then drain
-  the input queue. Call once at application entry, before the first AtUiRunMenu,
-  so a power press held through LoadImage/StartImage does not auto-confirm the
-  first entry.
+  Prepare the menu at application entry. The first AtUiWaitForKey waits for
+  the launching key to be released after the complete menu has been drawn,
+  then drains its repeated events before reading a selection.
 **/
 EFI_STATUS
 AtUiEnterMenu (
@@ -54,6 +53,10 @@ VOID
 AtUiEndScreen (
   IN CONST CHAR16 *Footer
   );
+
+/* 设置下方状态行。Text 需持续有效；NULL 关闭显示，下一次绘制时生效。 */
+VOID
+AtUiSetStatusLine (IN CONST CHAR16 *Text OPTIONAL);
 
 /** Print one menu row, highlighted when Selected. **/
 VOID

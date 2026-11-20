@@ -2,119 +2,150 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title id="pageTitle">假回锁 - BL Flasher</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title data-i18n="pageTitle">假回锁 - BL Flasher</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-<div class="page-shell">
-  <header class="hero-card">
-    <div>
-      <p class="eyebrow" id="lblKsuWebUI">KernelSU Module WebUI</p>
-      <h1>BL Flasher</h1>
-      <p class="hero-copy" id="heroDesc">
-        自动识别当前活动槽位，若新版本存在GBL漏洞则跳过BL刷写；将BL镜像刷写到另一槽位，并将破解ABL放入persist的efisp目录、BDS刷入efisp分区
-      </p>
-    </div>
-    <div class="hero-meta">
-      <span class="chip" id="stateChip">等待检测</span>
-      <span class="chip chip-warn" id="slotChip">槽位未知</span>
+  <header class="topbar">
+    <div class="page-width topbar-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="wordmark">BL Flasher</span>
+        <span class="host-name" data-i18n="ksuWebUI">KernelSU 模块</span>
+      </div>
+      <span class="chip" id="stateChip" role="status">等待检测</span>
     </div>
   </header>
 
-  <main class="grid-layout">
-    <section class="panel stats-panel">
-      <div class="panel-heading">
-        <h2 id="lblSlotStatus">槽位状态</h2>
-        <button class="ghost-button" id="refreshButton" type="button" data-i18n="refresh">刷新</button>
+  <main class="page-width workspace">
+    <section class="overview" aria-labelledby="overviewTitle">
+      <div class="section-heading">
+        <h1 id="overviewTitle" data-i18n="slotStatus">槽位概览</h1>
+        <button class="button quiet-button" id="refreshButton" type="button" disabled>
+          <span class="refresh-icon" aria-hidden="true">↻</span>
+          <span data-i18n="refresh">刷新状态</span>
+        </button>
       </div>
 
-      <div class="stats-grid">
-        <article class="stat-card">
-          <span class="stat-label" id="lblCurrentSlot">当前槽位</span>
-          <strong class="stat-value" id="currentSlot">-</strong>
-        </article>
-        <article class="stat-card accent-card">
-          <span class="stat-label" id="lblTargetSlot">目标槽位</span>
-          <strong class="stat-value" id="targetSlot">-</strong>
-        </article>
-        <article class="stat-card">
-          <span class="stat-label" id="lblImageCount">镜像数量</span>
-          <strong class="stat-value" id="imageCount">0</strong>
-        </article>
-        <article class="stat-card">
-          <span class="stat-label" id="lblTaskStatus">任务状态</span>
-          <strong class="stat-value stat-small" id="taskMessage">等待操作</strong>
-        </article>
-      </div>
-
-      <div class="action-strip">
-        <button class="primary-button" id="flashButton" type="button" data-i18n="flash">刷写到另一槽位</button>
-        <button class="ghost-button" id="bdsToolsButton" type="button" data-i18n="bdsTools">仅更新BDS和Tools</button>
-        <button class="ghost-button" id="clearLogButton" type="button" data-i18n="clearLog">清空日志</button>
-      </div>
-
-      <label class="option-check" for="updateEfispCheckbox">
-        <input id="updateEfispCheckbox" type="checkbox" checked />
-        <span id="lblUpdateEfisp">更新 efisp（默认开启）</span>
-      </label>
-
-      <label class="option-check" for="debugModeCheckbox">
-        <input id="debugModeCheckbox" type="checkbox" />
-        <span id="lblDebugMode">调试模式（仅处理不刷写，生成的文件保存在 tmp 目录）</span>
-      </label>
-
-      <p class="warning-copy" id="lblWarning">
-        刷写对象是 bootloader 相关分区，风险较高。开始前请确认镜像与机型严格匹配。
-      </p>
-    </section>
-
-    <section class="panel map-panel">
-      <div class="panel-heading">
-        <h2 id="lblImageMap">镜像映射</h2>
-        <span class="caption" id="updatedAt">尚未检测</span>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th id="tblPartition">分区名</th>
-              <th id="tblSource">源分区 (当前槽位)</th>
-              <th id="tblTarget">目标分区</th>
-              <th id="tblAction">操作</th>
-            </tr>
-          </thead>
-          <tbody id="imageTableBody">
-            <tr>
-              <td colspan="4" class="empty-row" id="tblWaiting">等待读取模块状态</td>
-            </tr>
-          </tbody>
-        </table>
+      <div class="overview-strip">
+        <div class="slot-route">
+          <dl class="slot-endpoint">
+            <dt data-i18n="currentSlot">当前槽位</dt>
+            <dd id="currentSlot">—</dd>
+          </dl>
+          <span class="slot-link" aria-hidden="true"></span>
+          <dl class="slot-endpoint target-slot">
+            <dt data-i18n="targetSlot">目标槽位</dt>
+            <dd id="targetSlot">—</dd>
+          </dl>
+        </div>
+        <dl class="readings">
+          <div class="image-reading">
+            <dt data-i18n="imageCount">镜像数量</dt>
+            <dd id="imageCount">—</dd>
+          </div>
+          <div>
+            <dt data-i18n="taskStatus">任务状态</dt>
+            <dd id="taskMessage">等待检测</dd>
+          </div>
+        </dl>
       </div>
     </section>
 
-    <section class="panel log-panel">
-      <div class="panel-heading">
-        <h2 id="lblLog">实时日志</h2>
-        <span class="caption" id="lblAutoPoll">自动轮询最近 200 行</span>
-      </div>
-      <pre id="logOutput">等待日志输出...</pre>
-    </section>
-  </main>
-</div>
+    <div class="workspace-columns">
+      <section class="panel settings-panel" aria-labelledby="settingsTitle">
+        <div class="panel-heading">
+          <h2 id="settingsTitle" data-i18n="settings">操作设置</h2>
+        </div>
+        <fieldset class="options" aria-labelledby="settingsTitle">
+          <label class="option-row">
+            <span>
+              <span class="option-name" data-i18n="updateEfisp">更新 efisp</span>
+              <span class="option-detail" data-i18n="efispHint">默认开启</span>
+            </span>
+            <input id="updateEfispCheckbox" type="checkbox" checked />
+          </label>
+          <label class="option-row">
+            <span>
+              <span class="option-name" data-i18n="debugMode">调试模式</span>
+              <span class="option-detail" data-i18n="debugHint">仅处理文件，不写入分区。efisp 文件保存在模块的 tmp/efisp 目录。</span>
+            </span>
+            <input id="debugModeCheckbox" type="checkbox" />
+          </label>
+        </fieldset>
+        <div class="action-area">
+          <p class="warning-copy">
+            <span class="warning-icon" aria-hidden="true">!</span>
+            <span data-i18n="warning">刷写会修改引导分区。请先确认镜像与机型匹配。</span>
+          </p>
+          <div class="task-actions">
+            <button class="button primary-button" id="flashButton" type="button" data-i18n="flash" disabled>刷写到另一槽位</button>
+            <button class="button secondary-button" id="bdsToolsButton" type="button" data-i18n="bdsTools" disabled>仅更新 BDS/Tools</button>
+          </div>
+        </div>
+      </section>
 
-<div class="modal-backdrop hidden" id="confirmModal" aria-hidden="true">
-  <div class="modal-card" role="dialog" aria-modal="true">
-    <p class="eyebrow" id="modalRisk">高风险操作</p>
-    <h2 id="modalTitle">确认刷写</h2>
-    <p id="confirmText">即将开始刷写，请确认操作对象和槽位。</p>
-    <div class="modal-actions">
-      <button class="ghost-button" id="cancelConfirmButton" type="button" data-i18n="cancel">取消</button>
-      <button class="primary-button" id="nextConfirmButton" type="button" data-i18n="continue">继续</button>
+      <div class="monitoring">
+        <section class="panel" aria-labelledby="mapTitle">
+          <div class="panel-heading">
+            <h2 id="mapTitle" data-i18n="imageMap">镜像映射</h2>
+            <span class="caption" id="updatedAt">尚未读取</span>
+          </div>
+          <table class="image-table" aria-labelledby="mapTitle">
+            <thead>
+              <tr>
+                <th scope="col" data-i18n="partition">分区</th>
+                <th scope="col" data-i18n="source">源分区（当前）</th>
+                <th scope="col" data-i18n="target">目标分区</th>
+                <th scope="col" data-i18n="action">操作</th>
+              </tr>
+            </thead>
+            <tbody id="imageTableBody">
+              <tr><td colspan="4" class="empty-row" data-i18n="waiting">等待读取槽位信息</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="panel log-panel" aria-labelledby="logTitle">
+          <div class="panel-heading">
+            <div class="log-heading">
+              <h2 id="logTitle" data-i18n="log">实时日志</h2>
+              <span class="caption" data-i18n="autoPoll">最近 200 行</span>
+            </div>
+            <button class="button quiet-button" id="clearLogButton" type="button" data-i18n="clearLog" disabled>清空日志</button>
+          </div>
+          <pre id="logOutput" role="region" tabindex="0" aria-labelledby="logTitle">等待日志输出…</pre>
+        </section>
+      </div>
     </div>
-  </div>
-</div>
+  </main>
 
-<script src="app.js"></script>
+  <footer class="page-width project-links">
+    <a href="https://github.com/roro2239/gbl_root_canoe" target="_blank" rel="noopener noreferrer">
+      <span data-i18n="project">当前项目</span>
+      <span class="repo-name">roro2239/gbl_root_canoe</span>
+      <span aria-hidden="true">↗</span>
+    </a>
+    <a href="https://github.com/SuperTurtleDev/gbl_root_canoe" target="_blank" rel="noopener noreferrer">
+      <span data-i18n="upstream">上游项目</span>
+      <span class="repo-name">SuperTurtleDev/gbl_root_canoe</span>
+      <span aria-hidden="true">↗</span>
+    </a>
+  </footer>
+
+  <dialog id="confirmModal" aria-labelledby="modalTitle" aria-describedby="confirmText">
+    <div class="modal-card">
+      <p class="risk-label"><span class="warning-icon" aria-hidden="true">!</span><span data-i18n="risk">高风险操作</span></p>
+      <h2 id="modalTitle">确认刷写</h2>
+      <p id="confirmText" aria-live="polite"></p>
+      <div class="modal-actions">
+        <button class="button secondary-button" id="cancelConfirmButton" type="button" data-i18n="cancel" autofocus>取消</button>
+        <button class="button primary-button" id="nextConfirmButton" type="button">继续</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="app.js"></script>
 </body>
 </html>

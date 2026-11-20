@@ -158,6 +158,7 @@
 	gEfiPartTypeSystemPartGuid
 
 [Protocols]
+	gEfiQcomVerifiedBootProtocolGuid
 	gSfbSecureBootProtocolGuid
 	gEfiKernelProtocolGuid
 	gEfiSimpleTextInputExProtocolGuid

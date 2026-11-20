@@ -235,10 +235,8 @@ VOID
 SfbShowFastbootMode (VOID);
 
 /*
- * Clear the console, show "Entering Boot Menu", and hold for a few seconds so
- * a volume key still held from power-on is released before the menu starts
- * taking input. The input buffer is drained afterwards so that held key does
- * not leak in as a spurious keypress.
+ * Draw the complete cached root menu, then wait for the launching key to be
+ * released and drain the input queue before refreshing the boot entries.
  */
 VOID
 SfbShowEnteringMenu (VOID);
@@ -254,10 +252,8 @@ VOID
 SfbShowBootingScreen (IN CONST CHAR16 *Name, IN BOOLEAN ClearScreen);
 
 /*
- * Clear the console, show "Entering <What>", and hold for one second so a
- * volume key held from the parent screen is released before the submenu starts
- * taking input. The input buffer is drained afterwards so that held key does
- * not leak in as a spurious keypress.
+ * Show "Entering <What>" while the submenu is prepared. The first SfbWaitForKey
+ * waits for the launching key to be released after the full screen is drawn.
  */
 VOID
 SfbShowEnteringScreen (IN CONST CHAR16 *What);
@@ -276,6 +272,9 @@ SfbWaitForKey (IN UINT32 TimeoutMs);
 /* ---- shared console helpers (SuperFbMenu.c) ----------------------------- */
 
 extern CONST CHAR16 gSfbRootTitle[];
+
+EFI_STATUS
+SfbReadBlState (OUT BOOLEAN *Unlocked);
 
 CONST CHAR16 *
 SfbEntryMenuName (IN CONST SFB_ENTRY_SPEC *Spec);

@@ -20,8 +20,10 @@ my %needed = map { $_ => 1 } (0x20 .. 0x7e, 0x2026, 0xfffd);
 my $pkg = "$Bin/../../..";
 my $loader = "$pkg/../QcomModulePkg/Application/LinuxLoader";
 my @sources = ("$Bin/../AndroidToolsUi.c", "$Bin/../MenuScreen.c",
+               "$pkg/../QcomModulePkg/Library/FastbootLib/FastbootMain.c",
+               "$pkg/../QcomModulePkg/Library/FastbootLib/Board.c",
                (map { "$pkg/Application/$_/$_.c" } qw(RebootTools BLTools ArbTools)),
-               (map { "$loader/$_.c" } qw(SuperFbMenu SuperFbTitle SuperFbAdvanced SuperFbBrowser SuperFbUsbMsd)));
+               (map { "$loader/$_.c" } qw(SuperFbMenu SuperFbTitle SuperFbAdvanced SuperFbBrowser SuperFbUsbMsd SuperFbEntries)));
 for my $path (@sources) {
     open my $source, '<:encoding(UTF-8)', $path or die "$path: $!";
     while (<$source>) {

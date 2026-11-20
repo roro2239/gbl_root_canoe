@@ -14,40 +14,49 @@ const state = {
 const i18n = {
   zh: {
     pageTitle: "假回锁 - BL Flasher",
-    ksuWebUI: "KernelSU Module WebUI",
-    heroDesc: "自动识别当前活动槽位，若新版本存在GBL漏洞则跳过BL刷写；将BL镜像刷写到另一槽位，并将破解ABL放入persist的efisp目录、BDS刷入efisp分区",
-    slotStatus: "槽位状态",
-    refresh: "刷新",
+    ksuWebUI: "KernelSU 模块",
+    slotStatus: "槽位概览",
+    refresh: "刷新状态",
+    settings: "操作设置",
     currentSlot: "当前槽位",
     targetSlot: "目标槽位",
     imageCount: "镜像数量",
     taskStatus: "任务状态",
     flash: "刷写到另一槽位",
-    bdsTools: "仅更新BDS和Tools",
+    bdsTools: "仅更新 BDS/Tools",
     confirmBdsTools: "确认更新 BDS/Tools",
     modalBdsStep1: "将把 BDS.efi 刷入 efisp 分区，复制模块自带的 efisp 文件夹和 ENTRIES.CFG 到 persist。不会改动 ABL 与 boot.efi。",
     modalBdsStep2: "第二次确认: 这是高风险写入操作，错误的 BDS 或 efisp 写入可能导致无法进入启动菜单。确认后将立即开始。",
     toastStartBdsTools: "BDS/Tools 更新任务已启动",
     toastBdsToolsDone: "BDS/Tools 更新完成",
     clearLog: "清空日志",
-    updateEfisp: "更新 efisp（默认开启）",
-    debugMode: "调试模式（仅处理不刷写，efisp 目录使用模块 tmp/efisp）",
-    warning: "刷写对象是 bootloader 相关分区，风险较高。开始前请确认镜像与机型严格匹配。",
+    updateEfisp: "更新 efisp",
+    efispHint: "默认开启",
+    debugMode: "调试模式",
+    debugHint: "仅处理文件，不写入分区。efisp 文件保存在模块的 tmp/efisp 目录。",
+    warning: "刷写会修改引导分区。请先确认镜像与机型匹配。",
     imageMap: "镜像映射",
-    partition: "分区名",
-    source: "源分区 (当前槽位)",
+    partition: "分区",
+    source: "源分区（当前）",
     target: "目标分区",
     action: "操作",
-    waiting: "等待读取模块状态",
+    waiting: "等待读取槽位信息",
     log: "实时日志",
-    autoPoll: "自动轮询最近 200 行",
+    autoPoll: "最近 200 行",
+    project: "当前项目",
+    upstream: "上游项目",
     risk: "高风险操作",
     confirmFlash: "确认刷写",
     cancel: "取消",
     continue: "继续",
-    waitingStatus: "等待检测",
-    slotUnknown: "槽位未知",
-    logWaiting: "等待日志输出...",
+    states: { idle: "空闲", success: "已完成", warning: "有警告", error: "失败" },
+    updated: "更新于",
+    noTimestamp: "暂无更新时间",
+    disconnected: "模块未连接",
+    openInManager: "请从模块管理器打开此页。",
+    initFailed: "模块初始化失败",
+    missingInfo: "未读取到模块信息",
+    logWaiting: "等待日志输出…",
     toastRunning: "已有刷写任务在运行",
     toastStartDebug: "调试任务已启动",
     toastStartFlash: "刷写任务已启动",
@@ -66,16 +75,16 @@ const i18n = {
     confirmSlot: "请确认槽位无误。",
     taskRunning:"任务运行中",
     waitOperate:"等待操作",
-    copyPart:"分区拷贝",
+    copyPart:"复制",
     statusReadFail:"状态读取失败",
     startFail:"启动失败"
   },
   en: {
     pageTitle: "Fake Lock - BL Flasher",
-    ksuWebUI: "KernelSU Module WebUI",
-    heroDesc: "Auto-detect active slot. Skip BL flash if new build has GBL exploit. Flash BL images to inactive slot, place the cracked ABL in persist's efisp dir and flash the BDS to the efisp partition.",
-    slotStatus: "Slot Status",
-    refresh: "Refresh",
+    ksuWebUI: "KernelSU module",
+    slotStatus: "Slot overview",
+    refresh: "Refresh status",
+    settings: "Task settings",
     currentSlot: "Current Slot",
     targetSlot: "Target Slot",
     imageCount: "Image Count",
@@ -88,24 +97,33 @@ const i18n = {
     toastStartBdsTools: "BDS/Tools update started",
     toastBdsToolsDone: "BDS/Tools update completed",
     clearLog: "Clear Log",
-    updateEfisp: "Update efisp (on by default)",
-    debugMode: "Debug Mode (process only, no flash; efisp dir uses module tmp/efisp)",
+    updateEfisp: "Update efisp",
+    efispHint: "On by default",
+    debugMode: "Debug mode",
+    debugHint: "Process files without writing to partitions. The module saves efisp files in tmp/efisp.",
     warning: "Flashing bootloader partitions is high risk. Verify images match your device before starting.",
     imageMap: "Image Mapping",
     partition: "Partition",
     source: "Source (Current)",
     target: "Target",
     action: "Action",
-    waiting: "Waiting for module status",
+    waiting: "Waiting for slot information",
     log: "Live Log",
-    autoPoll: "Auto poll last 200 lines",
+    autoPoll: "Last 200 lines",
+    project: "Current project",
+    upstream: "Upstream project",
     risk: "HIGH RISK",
     confirmFlash: "Confirm Flash",
     cancel: "Cancel",
     continue: "Continue",
-    waitingStatus: "Waiting",
-    slotUnknown: "Slot Unknown",
-    logWaiting: "Waiting for log...",
+    states: { idle: "Idle", success: "Completed", warning: "Warning", error: "Failed" },
+    updated: "Updated",
+    noTimestamp: "No update time",
+    disconnected: "Module disconnected",
+    openInManager: "Open this page in the module manager.",
+    initFailed: "Module initialization failed",
+    missingInfo: "Module information unavailable",
+    logWaiting: "Waiting for log output…",
     toastRunning: "Flash task is already running",
     toastStartDebug: "Debug task started",
     toastStartFlash: "Flash task started",
@@ -132,7 +150,6 @@ const i18n = {
 
 const elements = {
   stateChip: document.getElementById("stateChip"),
-  slotChip: document.getElementById("slotChip"),
   currentSlot: document.getElementById("currentSlot"),
   targetSlot: document.getElementById("targetSlot"),
   imageCount: document.getElementById("imageCount"),
@@ -149,43 +166,15 @@ const elements = {
   nextConfirmButton: document.getElementById("nextConfirmButton"),
   cancelConfirmButton: document.getElementById("cancelConfirmButton"),
   updateEfispCheckbox: document.getElementById("updateEfispCheckbox"),
-  debugModeCheckbox: document.getElementById("debugModeCheckbox"),
-  pageTitle: document.getElementById("pageTitle")
+  debugModeCheckbox: document.getElementById("debugModeCheckbox")
 };
 
 function applyLanguage(lang) {
   state.lang = lang;
   const t = i18n[lang];
   document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
-  elements.pageTitle.textContent = t.pageTitle;
-  document.querySelector("#lblKsuWebUI").textContent = t.ksuWebUI;
-  document.querySelector(".hero-copy").textContent = t.heroDesc;
-  document.querySelector("#lblSlotStatus").textContent = t.slotStatus;
-  document.querySelector("#lblCurrentSlot").textContent = t.currentSlot;
-  document.querySelector("#lblTargetSlot").textContent = t.targetSlot;
-  document.querySelector("#lblImageCount").textContent = t.imageCount;
-  document.querySelector("#lblTaskStatus").textContent = t.taskStatus;
-  document.querySelector("#lblUpdateEfisp").textContent = t.updateEfisp;
-  document.querySelector("#lblDebugMode").textContent = t.debugMode;
-  document.querySelector("#lblWarning").textContent = t.warning;
-  document.querySelector("#lblImageMap").textContent = t.imageMap;
-  document.querySelector("#tblPartition").textContent = t.partition;
-  document.querySelector("#tblSource").textContent = t.source;
-  document.querySelector("#tblTarget").textContent = t.target;
-  document.querySelector("#tblAction").textContent = t.action;
-  document.querySelector("#tblWaiting").textContent = t.waiting;
-  document.querySelector("#lblLog").textContent = t.log;
-  document.querySelector("#lblAutoPoll").textContent = t.autoPoll;
-  document.querySelector("#modalRisk").textContent = t.risk;
-  document.querySelector("#modalTitle").textContent = t.confirmFlash;
-  if (elements.logOutput.textContent === "等待日志输出..." || elements.logOutput.textContent === "Waiting for log...") {
+  if ([i18n.zh.logWaiting, i18n.en.logWaiting].includes(elements.logOutput.textContent)) {
     elements.logOutput.textContent = t.logWaiting;
-  }
-  if (elements.stateChip.textContent === "等待检测" || elements.stateChip.textContent === "Waiting") {
-    elements.stateChip.textContent = t.waitingStatus;
-  }
-  if (elements.slotChip.textContent === "槽位未知" || elements.slotChip.textContent === "Slot Unknown") {
-    elements.slotChip.textContent = t.slotUnknown;
   }
   document.querySelectorAll("[data-i18n]").forEach(el => {
     const key = el.dataset.i18n;
@@ -285,17 +274,16 @@ function renderStatus(status) {
   const run = status.RUNNING === "1";
   const st = status.STATE || "idle";
   const msg = status.MESSAGE || t.waitOperate;
-  elements.currentSlot.textContent = cur;
-  elements.targetSlot.textContent = tar;
+  elements.currentSlot.textContent = cur === "-" ? "—" : cur;
+  elements.targetSlot.textContent = tar === "-" ? "—" : tar;
   elements.imageCount.textContent = IMAGE_NAMES.length;
   elements.taskMessage.textContent = msg;
-  elements.updatedAt.textContent = status.UPDATED_AT || "-";
-  elements.stateChip.textContent = run ? t.taskRunning : `${state.lang === "zh" ? "状态" : "Status"}: ${st}`;
+  elements.updatedAt.textContent = status.UPDATED_AT ? `${t.updated} ${status.UPDATED_AT}` : t.noTimestamp;
+  elements.stateChip.textContent = run ? t.taskRunning : (t.states[st] || st);
   elements.stateChip.className = "chip";
   if (st === "success") elements.stateChip.classList.add("chip-success");
   else if (st === "error") elements.stateChip.classList.add("chip-danger");
   else if (st === "warning" || run) elements.stateChip.classList.add("chip-warn");
-  elements.slotChip.textContent = (cur !== "-" && tar !== "-") ? `${state.lang === "zh" ? "当前" : "Current"} ${cur} → ${state.lang === "zh" ? "目标" : "Target"} ${tar}` : t.slotUnknown;
   elements.flashButton.disabled = run || cur === "-" || tar === "-";
   elements.bdsToolsButton.disabled = run;
   elements.clearLogButton.disabled = run;
@@ -308,10 +296,8 @@ function refreshStatus() {
     if (raw === state.prevStatusRaw) return state.status;
     state.prevStatusRaw = raw;
     const s = parseKeyValueOutput(raw);
-    if(s.USER_LANG === "en"){
-      applyLanguage("en");
-    }else if(s.USER_LANG === "zh"){
-      applyLanguage("zh");
+    if (s.USER_LANG !== state.lang && (s.USER_LANG === "zh" || s.USER_LANG === "en")) {
+      applyLanguage(s.USER_LANG);
     }
     renderStatus(s);
     return s;
@@ -327,8 +313,13 @@ function refreshStatus() {
 function refreshLog() {
   try {
     const log = runScript("tail", "200").trim();
-    elements.logOutput.textContent = log || i18n[state.lang].logWaiting;
-    elements.logOutput.scrollTop = elements.logOutput.scrollHeight;
+    const output = elements.logOutput;
+    const content = log || i18n[state.lang].logWaiting;
+    if (output.textContent !== content) {
+      const atBottom = output.scrollHeight - output.scrollTop - output.clientHeight <= 2;
+      output.textContent = content;
+      if (atBottom) output.scrollTop = output.scrollHeight;
+    }
   } catch (e) {
     elements.logOutput.textContent = `${state.lang === "zh" ? "日志读取失败" : "Log Read Failed"}: ${e.message}`;
   }
@@ -337,8 +328,7 @@ function refreshLog() {
 function closeConfirmModal() {
   state.confirmStep = 0;
   state.pendingAction = null;
-  elements.confirmModal.classList.add("hidden");
-  elements.confirmModal.setAttribute("aria-hidden", "true");
+  elements.confirmModal.close();
   elements.nextConfirmButton.textContent = i18n[state.lang].continue;
 }
 
@@ -363,8 +353,7 @@ function openConfirmModal(action) {
     elements.confirmText.textContent = msg;
     elements.nextConfirmButton.textContent = dbg ? (state.lang === "zh" ? "开始调试" : "Start Debug") : t.continue;
   }
-  elements.confirmModal.classList.remove("hidden");
-  elements.confirmModal.setAttribute("aria-hidden", "false");
+  elements.confirmModal.showModal();
 }
 
 function handleConfirmProgress() {
@@ -456,20 +445,23 @@ function manualRefresh() {
 async function init() {
   try {
     const info = moduleInfo();
-    if(!info) return;
+    if (!info) throw new Error(i18n[state.lang].missingInfo);
     state.moduleDir = info.moduleDir;
     state.scriptPath = `${state.moduleDir}/bin/bl_flasher.sh`;
     refreshStatus();
   } catch (e) {
-    elements.stateChip.textContent = state.lang === "zh" ? "WebUI 初始化失败" : "WebUI Init Failed";
-    elements.stateChip.className = "chip chip-danger";
-    elements.taskMessage.textContent = e.message;
+    const t = i18n[state.lang];
+    const hasBridge = Boolean(getKsuBridge());
+    elements.stateChip.textContent = hasBridge ? t.initFailed : t.disconnected;
+    elements.stateChip.className = hasBridge ? "chip chip-danger" : "chip";
+    elements.taskMessage.textContent = hasBridge ? e.message : t.openInManager;
     elements.flashButton.disabled = true;
     elements.bdsToolsButton.disabled = true;
     elements.clearLogButton.disabled = true;
     return;
   }
 
+  elements.refreshButton.disabled = false;
   elements.refreshButton.addEventListener("click", manualRefresh);
   elements.flashButton.addEventListener("click", () => openConfirmModal("flash"));
   elements.bdsToolsButton.addEventListener("click", () => openConfirmModal("bds-tools"));
@@ -477,6 +469,10 @@ async function init() {
   elements.cancelConfirmButton.addEventListener("click", closeConfirmModal);
   elements.nextConfirmButton.addEventListener("click", handleConfirmProgress);
   elements.confirmModal.addEventListener("click", e => e.target === elements.confirmModal && closeConfirmModal());
+  elements.confirmModal.addEventListener("cancel", e => {
+    e.preventDefault();
+    closeConfirmModal();
+  });
 
   schedulePoll(3000);
 }

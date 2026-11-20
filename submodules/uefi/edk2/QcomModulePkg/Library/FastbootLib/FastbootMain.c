@@ -79,6 +79,7 @@ found at
  */
 
 #include <Uefi.h>
+#include <AndroidToolsUi.h>
 #include <Library/DebugLib.h>
 #include <Library/Debug.h>
 #include <Library/LinuxLoaderLib.h>
@@ -413,9 +414,9 @@ VOID ShutdownDevice (VOID);
 #define FB_ACTION_ROWS  3
 
 STATIC CONST CHAR16 *mFbActionRow[FB_ACTION_ROWS] = {
-  L"Power Off",
-  L"Restart",
-  L"Exit to menu",
+  L"关机",
+  L"重启",
+  L"返回启动菜单",
 };
 STATIC UINTN mFbActionCursor = 0;
 
@@ -432,10 +433,6 @@ FastbootRequestExitToMenu (VOID)
   mFbExitToMenu = TRUE;
 }
 
-#define FB_ATTR_NORMAL    EFI_TEXT_ATTR (EFI_LIGHTGRAY, EFI_BLACK)
-#define FB_ATTR_SELECTED  EFI_TEXT_ATTR (EFI_BLACK, EFI_LIGHTGRAY)
-#define FB_ATTR_TITLE     EFI_TEXT_ATTR (EFI_WHITE, EFI_BLACK)
-
 typedef enum {
   FbActionNone = 0,
   FbActionPowerOff,
@@ -449,36 +446,18 @@ FastbootDrawModeScreen (VOID)
 {
   UINTN  Index;
 
-  gST->ConOut->SetAttribute (gST->ConOut, FB_ATTR_TITLE);
-  gST->ConOut->ClearScreen (gST->ConOut);
-  gST->ConOut->EnableCursor (gST->ConOut, FALSE);
-
-  Print (L"FASTBOOT MODE\r\n\r\n");
-
+  AtUiBeginScreen (L"SuperFastboot 模式", NULL);
   for (Index = 0; Index < FB_ACTION_ROWS; Index++) {
-    gST->ConOut->SetAttribute (gST->ConOut,
-                               (Index == mFbActionCursor) ? FB_ATTR_SELECTED
-                                                           : FB_ATTR_NORMAL);
-    Print (L"%s %s\r\n",
-           (Index == mFbActionCursor) ? L">" : L" ",
-           mFbActionRow[Index]);
+    AtUiDrawRow ((BOOLEAN)(Index == mFbActionCursor), L" ", mFbActionRow[Index]);
   }
-
-  gST->ConOut->SetAttribute (gST->ConOut, FB_ATTR_NORMAL);
-  Print (L"\r\nVol Up/Down: move   Power: select\r\n");
+  AtUiEndScreen (L"音量键移动，电源键确认");
 }
 
 STATIC
 VOID
 FastbootShowActionScreen (IN CONST CHAR16 *Text)
 {
-  gST->ConOut->SetAttribute (gST->ConOut, FB_ATTR_TITLE);
-  gST->ConOut->ClearScreen (gST->ConOut);
-  gST->ConOut->EnableCursor (gST->ConOut, FALSE);
-
-  Print (L"%s\r\n", Text);
-
-  gST->ConOut->SetAttribute (gST->ConOut, FB_ATTR_NORMAL);
+  AtUiShowMessage (Text);
 }
 
 /*
@@ -493,6 +472,9 @@ FastbootPollActionKey (VOID)
   EFI_STATUS     Status;
   EFI_INPUT_KEY  Key;
 
+  if (EFI_ERROR (AtUiScreenStatus ())) {
+    return FbActionNone;
+  }
   Status = gBS->CheckEvent (gST->ConIn->WaitForKey);
   if (Status == EFI_NOT_READY || EFI_ERROR (Status)) {
     return FbActionNone;
@@ -533,24 +515,26 @@ EFI_STATUS FastbootInitialize (VOID)
 
   DEBUG ((EFI_D_INFO, "Fastboot Build Info: %a %a\n", __DATE__, __TIME__));
 
+  mFbActionCursor = 0;
+  FastbootDrawModeScreen ();
+
   /* Start the USB device enumeration */
   Status = FastbootUsbDeviceStart ();
   if (Status != EFI_SUCCESS) {
     DEBUG ((EFI_D_ERROR, "couldnt Start fastboot usb device, exiting"));
+    FastbootShowActionScreen (L"SuperFastboot 初始化失败");
     return Status;
   }
   StoreRootDeviceType ();
 
   /*
-   * Draw the on-device fastboot mode screen with the power/restart actions. A
+   * The complete mode screen is already visible. A
    * key held while entering fastboot (the power press that confirmed "Enter
    * Fastboot") is released and drained first, with a brief pause, so it cannot
    * fire a spurious confirm on the highlighted action row.
    */
   gBS->Stall (1000000);
   gST->ConIn->Reset (gST->ConIn, FALSE);
-  mFbActionCursor = 0;
-  FastbootDrawModeScreen ();
 
   /* Wait for USB events in tight loop */
   while (1) {
@@ -563,23 +547,23 @@ EFI_STATUS FastbootInitialize (VOID)
     /* The host asked for the menu back; take the ordinary exit path below. */
     if (mFbExitToMenu) {
       mFbExitToMenu = FALSE;
-      FastbootShowActionScreen (L"Returning to Boot Menu...");
+      FastbootShowActionScreen (L"正在返回启动菜单");
       break;
     }
 
     switch (FastbootPollActionKey ()) {
     case FbActionPowerOff:
-      FastbootShowActionScreen (L"Powering off...");
+      FastbootShowActionScreen (L"正在关机");
       ShutdownDevice ();
       return EFI_SUCCESS;
 
     case FbActionRestart:
-      FastbootShowActionScreen (L"Restarting...");
+      FastbootShowActionScreen (L"正在重启");
       RebootDevice (NORMAL_MODE);
       return EFI_SUCCESS;
 
     case FbActionExitMenu:
-      FastbootShowActionScreen (L"Returning to Boot Menu...");
+      FastbootShowActionScreen (L"正在返回启动菜单");
       /* The switch's own break only leaves this case; the flag is what takes
        * the while (1) below through its ordinary exit path. */
       mFbExitToMenu = TRUE;

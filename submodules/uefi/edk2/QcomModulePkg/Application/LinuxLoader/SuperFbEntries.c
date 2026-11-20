@@ -8,6 +8,7 @@
  */
 
 #include "SuperFbMenu.h"
+#include <AtDevInfo.h>
 
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
@@ -537,6 +538,26 @@ SfbWriteStoredEntries (IN CONST SFB_ENTRY_LIST *List)
   DEBUG ((EFI_D_INFO, "SFB: stored %u entries: %r\n", (UINT32)List->Count,
           Status));
   return Status;
+}
+
+EFI_STATUS
+SfbReadBlState (OUT BOOLEAN *Unlocked)
+{
+  QCOM_VERIFIEDBOOT_PROTOCOL *Vb = NULL;
+  DeviceInfo Info;
+  EFI_STATUS Status;
+
+  Status = gBS->LocateProtocol (&gEfiQcomVerifiedBootProtocolGuid, NULL, (VOID **)&Vb);
+  if (EFI_ERROR (Status)) return Status;
+  if (Vb == NULL || Vb->VBRwDeviceState == NULL) return EFI_UNSUPPORTED;
+  SetMem (&Info, sizeof (Info), 0xff);
+  Status = Vb->VBRwDeviceState (Vb, READ_CONFIG, (UINT8 *)&Info, (UINT32)sizeof (Info));
+  if (EFI_ERROR (Status)) return Status;
+  if (CompareMem (Info.magic, DEVICE_MAGIC, DEVICE_MAGIC_SIZE) != 0 || Info.is_unlocked > 1) {
+    return EFI_VOLUME_CORRUPTED;
+  }
+  *Unlocked = Info.is_unlocked;
+  return EFI_SUCCESS;
 }
 
 /* ---- launching ---------------------------------------------------------- */

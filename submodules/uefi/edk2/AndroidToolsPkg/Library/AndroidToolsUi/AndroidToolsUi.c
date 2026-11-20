@@ -29,7 +29,17 @@ STATIC MENU_SCREEN mScreen;
 STATIC EFI_STATUS  mDrawStatus;
 STATIC UINTN       mNextRow;
 STATIC UINTN       mVisibleRows;
+STATIC CONST CHAR16 *mStatusLine;
+STATIC BOOLEAN     mEnterMenuPending;
 
+VOID
+AtUiSetStatusLine (IN CONST CHAR16 *Text)
+{
+  if ((mStatusLine == NULL) != (Text == NULL) && mScreen.Lines != 0) {
+    MenuScreenClose (&mScreen);
+  }
+  mStatusLine = Text;
+}
 RETURN_STATUS
 EFIAPI
 AtUiReleaseScreen (VOID)
@@ -37,6 +47,7 @@ AtUiReleaseScreen (VOID)
   if (mScreen.Lines != 0) {
     MenuScreenClose (&mScreen);
   }
+  mEnterMenuPending = FALSE;
   return EFI_SUCCESS;
 }
 
@@ -68,7 +79,7 @@ ShowBanner (IN CONST CHAR16 *Text, IN BOOLEAN ClearScreen, IN BOOLEAN TopAligned
     MenuScreenClose (&mScreen);
   }
   if (mScreen.Lines == 0) {
-    mDrawStatus = MenuScreenOpen (&mScreen, 7, AT_SCREEN_LINES);
+    mDrawStatus = MenuScreenOpen (&mScreen, (mStatusLine != NULL) ? 9 : 7, AT_SCREEN_LINES);
   }
   if (!EFI_ERROR (mDrawStatus) && ClearScreen) {
     mDrawStatus = MenuScreenClear (&mScreen);
@@ -85,6 +96,10 @@ ShowBanner (IN CONST CHAR16 *Text, IN BOOLEAN ClearScreen, IN BOOLEAN TopAligned
   }
   DrawLine (0, MenuLineTitle, Text, MAX_UINTN);
   mScreen.Top = Top;
+  if (mStatusLine != NULL) {
+    /* 保留最后一行为空白，使状态行与底边保持距离。 */
+    DrawLine (mScreen.Lines - 2, MenuLineHint, mStatusLine, MAX_UINTN);
+  }
 }
 
 VOID
@@ -114,6 +129,17 @@ AtUiWaitForKey (
 
   if (EFI_ERROR (mDrawStatus)) {
     return AtKeyTimeout;
+  }
+  if (mEnterMenuPending) {
+    mEnterMenuPending = FALSE;
+    mDrawStatus = gBS->Stall (AT_ENTER_MENU_DELAY_S * 1000 * 1000);
+    if (!EFI_ERROR (mDrawStatus)) {
+      mDrawStatus = gST->ConIn->Reset (gST->ConIn, FALSE);
+    }
+    if (EFI_ERROR (mDrawStatus)) {
+      DEBUG ((DEBUG_ERROR, "AT: preparing menu input failed: %r\n", mDrawStatus));
+      return AtKeyTimeout;
+    }
   }
   if (TimeoutMs != 0) {
     Status = gBS->CreateEvent (EVT_TIMER, TPL_CALLBACK, NULL, NULL, &TimerEvent);
@@ -175,12 +201,7 @@ AtUiWaitForKey (
   return Result;
 }
 
-/*
- * Announce the menu, then wait for the key that launched us to be released
- * before draining the input queue. Without this, a power press held through
- * the LoadImage/StartImage transition would be read back at once and confirm
- * the first menu entry. Mirrors SfbShowEnteringMenu in SuperFbMenu.c.
- */
+/* 首屏绘制后、第一次读取按键前再清理启动按键的长按和重复事件。 */
 EFI_STATUS
 AtUiEnterMenu (
   IN CONST CHAR16 *Title
@@ -191,12 +212,8 @@ AtUiEnterMenu (
     return mDrawStatus;
   }
 
-  /* Wait for the launching key to be released... */
-  gBS->Stall (AT_ENTER_MENU_DELAY_S * 1000 * 1000);
-
-  /* ...then drop anything typed or held during the wait so it does not leak
-   * into the menu as a spurious confirm. */
-  return gST->ConIn->Reset (gST->ConIn, FALSE);
+  mEnterMenuPending = TRUE;
+  return EFI_SUCCESS;
 }
 
 /* ---- drawing ------------------------------------------------------------ */
@@ -216,8 +233,8 @@ AtUiBeginScreen (
   if (Subtitle != NULL) {
     DrawLine (mNextRow++, MenuLineHint, Subtitle, MAX_UINTN);
   }
-  /* 最后两行提示和一行页脚不计入列表窗口。 */
-  mVisibleRows = MIN (AT_VISIBLE_ROWS, mScreen.Lines - mNextRow - 3);
+  /* 状态开启时，额外保留状态行和底部留白。 */
+  mVisibleRows = MIN (AT_VISIBLE_ROWS, mScreen.Lines - mNextRow - ((mStatusLine != NULL) ? 5 : 3));
 }
 
 VOID
@@ -226,7 +243,7 @@ AtUiEndScreen (
   )
 {
   if (Footer != NULL) {
-    DrawLine (mScreen.Lines - 1, MenuLineHint, Footer, MAX_UINTN);
+    DrawLine (mScreen.Lines - ((mStatusLine != NULL) ? 3 : 1), MenuLineHint, Footer, MAX_UINTN);
   }
 }
 
@@ -259,14 +276,15 @@ VOID
 AtUiDrawNote (IN CONST CHAR16 *Text)
 {
   UINTN Count;
+  UINTN FooterRow = mScreen.Lines - ((mStatusLine != NULL) ? 3 : 1);
 
   while (!EFI_ERROR (mDrawStatus) && *Text != 0) {
-    if (mNextRow >= mScreen.Lines - 1) {
+    if (mNextRow >= FooterRow) {
       mDrawStatus = EFI_BAD_BUFFER_SIZE;
       DEBUG ((DEBUG_ERROR, "Menu: no room for message\n"));
       return;
     }
-    Count = (mNextRow == mScreen.Lines - 2) ? StrLen (Text) : MenuScreenFit (&mScreen, Text);
+    Count = (mNextRow == FooterRow - 1) ? StrLen (Text) : MenuScreenFit (&mScreen, Text);
     DrawLine (mNextRow++, MenuLineNormal, Text, Count);
     Text += Count;
   }
@@ -372,6 +390,9 @@ AtUiRunMenu (
     }
 
     Key = AtUiWaitForKey (0);
+    if (EFI_ERROR (mDrawStatus)) {
+      return mDrawStatus;
+    }
     if (Key == AtKeySelect) {
       *Selected = Cursor;
       return EFI_SUCCESS;

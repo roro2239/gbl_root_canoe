@@ -24,6 +24,11 @@
 /* Keeps the translation unit legal when the feature is compiled out. */
 CONST CHAR8 *gSfbMenuModuleTag = "SuperFbMenu";
 
+#define SFB_ENTER_MENU_DELAY_S       3
+#define SFB_ENTERING_SCREEN_DELAY_S  1
+
+STATIC BOOLEAN mSubmenuInputPending;
+
 SFB_KEY
 SfbWaitForKey (IN UINT32 TimeoutMs)
 {
@@ -37,6 +42,17 @@ SfbWaitForKey (IN UINT32 TimeoutMs)
 
   if (EFI_ERROR (AtUiScreenStatus ())) {
     return SfbKeyDisplayError;
+  }
+  if (mSubmenuInputPending) {
+    mSubmenuInputPending = FALSE;
+    Status = gBS->Stall (SFB_ENTERING_SCREEN_DELAY_S * 1000 * 1000);
+    if (!EFI_ERROR (Status)) {
+      Status = gST->ConIn->Reset (gST->ConIn, FALSE);
+    }
+    if (EFI_ERROR (Status)) {
+      DEBUG ((EFI_D_ERROR, "SFB: preparing submenu input failed: %r\n", Status));
+      return SfbKeyDisplayError;
+    }
   }
   if (TimeoutMs != 0) {
     Status = gBS->CreateEvent (EVT_TIMER, TPL_CALLBACK, NULL, NULL, &TimerEvent);
@@ -105,9 +121,27 @@ SfbWaitForKey (IN UINT32 TimeoutMs)
 
 /* ---- drawing ------------------------------------------------------------ */
 
+STATIC
+VOID
+SfbUpdateBlStateFooter (VOID)
+{
+  STATIC CHAR16 Text[80];
+  EFI_STATUS Status;
+  BOOLEAN Unlocked;
+
+  Status = SfbReadBlState (&Unlocked);
+  if (EFI_ERROR (Status)) {
+    UnicodeSPrint (Text, sizeof (Text), L"BL 真实状态：读取失败（0x%lx）", (UINT64)Status);
+  } else {
+    UnicodeSPrint (Text, sizeof (Text), L"BL 真实状态：%s", Unlocked ? L"已解锁" : L"已锁定");
+  }
+  AtUiSetStatusLine (Text);
+}
+
 VOID
 SfbBeginScreen (IN CONST CHAR16 *Title OPTIONAL, IN CONST CHAR16 *Subtitle OPTIONAL)
 {
+  SfbUpdateBlStateFooter ();
   AtUiBeginScreen ((Title != NULL) ? Title : gSfbRootTitle, Subtitle);
 }
 
@@ -171,6 +205,7 @@ SfbMoveCursor (IN OUT UINTN *Cursor, IN UINTN Count, IN SFB_KEY Key)
 VOID
 SfbReportStatus (IN CONST CHAR16 *What, IN EFI_STATUS Status)
 {
+  SfbUpdateBlStateFooter ();
   AtUiReportStatus (What, Status);
 }
 
@@ -183,7 +218,8 @@ SfbReportStatus (IN CONST CHAR16 *What, IN EFI_STATUS Status)
 VOID
 SfbShowFastbootMode (VOID)
 {
-  AtUiShowMessage (L"Fastboot 模式");
+  SfbUpdateBlStateFooter ();
+  AtUiShowMessage (L"SuperFastboot 模式");
 }
 
 /*
@@ -196,7 +232,11 @@ SfbShowBootingScreen (IN CONST CHAR16 *Name, IN BOOLEAN ClearScreen)
 {
   CHAR16 Text[SFB_NAME_CHARS + 8];
 
+  if (Name != NULL && StrnCmp (Name, L"启动 ", 3) == 0) {
+    Name += 3;
+  }
   UnicodeSPrint (Text, sizeof (Text), L"正在启动 %s", (Name != NULL) ? Name : L"");
+  SfbUpdateBlStateFooter ();
   AtUiShowBanner (Text, ClearScreen);
 }
 
@@ -211,35 +251,7 @@ SfbShowActionScreen (IN CONST CHAR16 *Text)
   AtUiShowMessage (Text);
 }
 
-/*
- * Seconds to hold on the root title screen before the menu starts
- * taking input. Long enough that a volume key held from power-on has been
- * released, so it does not immediately move the menu cursor.
- */
-#define SFB_ENTER_MENU_DELAY_S  3
-
-VOID
-SfbShowEnteringMenu (VOID)
-{
-  AtUiShowMessage (gSfbRootTitle);
-
-  /* Wait for the key to be released... */
-  gBS->Stall (SFB_ENTER_MENU_DELAY_S * 1000 * 1000);
-
-  /* ...then drop anything typed or held during the wait so it does not leak
-   * into the menu as a spurious keypress. */
-  gST->ConIn->Reset (gST->ConIn, FALSE);
-}
-
 /* ---- shared screens ------------------------------------------------------- */
-
-/*
- * Seconds to hold on an "Entering <submenu>" screen before the submenu starts
- * taking input. Short of the root menu's three-second hold on purpose: the
- * parent's confirm keystroke is already consumed, this only covers a key still
- * held or its trailing repeat events.
- */
-#define SFB_ENTERING_SCREEN_DELAY_S  1
 
 VOID
 SfbShowEnteringScreen (IN CONST CHAR16 *What)
@@ -249,10 +261,8 @@ SfbShowEnteringScreen (IN CONST CHAR16 *What)
   UnicodeSPrint (Text, sizeof (Text), L"正在进入%s", (What != NULL) ? What : L"菜单");
   AtUiShowMessage (Text);
 
-  /* Wait for the key to be released, then drop anything typed or held during
-   * the wait so it does not leak into the submenu as a spurious keypress. */
-  gBS->Stall (SFB_ENTERING_SCREEN_DELAY_S * 1000 * 1000);
-  gST->ConIn->Reset (gST->ConIn, FALSE);
+  /* 完整子菜单绘制后、第一次接收按键前再等待释放按键。 */
+  mSubmenuInputPending = TRUE;
 }
 
 /*
@@ -408,6 +418,32 @@ SfbDrawMenu (IN CONST SFB_MENU_ROW *Rows,
   }
 
   SfbEndScreen (L"音量键移动，电源键确认");
+}
+
+VOID
+SfbShowEnteringMenu (VOID)
+{
+  SFB_ENTRY_LIST *List = SfbEntries ();
+  SFB_MENU_ROW   *Rows;
+  UINTN          Count;
+
+  if (List == NULL) {
+    return;
+  }
+  Rows = AllocateZeroPool (SFB_MAX_MENU_ROWS * sizeof (*Rows));
+  if (Rows == NULL) {
+    DEBUG ((EFI_D_ERROR, "SFB: cannot allocate initial menu rows\n"));
+    return;
+  }
+  /* 启动流程已加载启动项，先显示完整缓存菜单，再等待按键释放和卷刷新。 */
+  Count = SfbBuildRows (List, L"", Rows);
+  SfbDrawMenu (Rows, Count, 0, NULL);
+  FreePool (Rows);
+  if (EFI_ERROR (AtUiScreenStatus ())) {
+    return;
+  }
+  gBS->Stall (SFB_ENTER_MENU_DELAY_S * 1000 * 1000);
+  gST->ConIn->Reset (gST->ConIn, FALSE);
 }
 
 /* Refresh the shared list from the volumes and store the result. */

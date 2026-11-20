@@ -334,7 +334,7 @@ SfbEfiActionMenu (IN EFI_HANDLE   Volume,
                   IN CONST CHAR16 *Name)
 {
   STATIC CONST CHAR16  *Actions[] = {
-    L"启动",
+    L"启动（临时）",
     L"添加到启动菜单",
     L"返回"
   };
@@ -364,7 +364,7 @@ SfbEfiActionMenu (IN EFI_HANDLE   Volume,
     UINTN    Index;
     SFB_KEY  Key;
 
-    SfbBeginScreen (L"EFI 应用", FullPath);
+    SfbBeginScreen (L"EFI 应用程序", FullPath);
 
     for (Index = 0; Index < ARRAY_SIZE (Actions); Index++) {
       SfbDrawRow ((BOOLEAN)(Index == Cursor), L" ", Actions[Index]);
@@ -546,7 +546,7 @@ SfbBrowseVolume (IN EFI_HANDLE   Volume,
     }
 
     if (!SfbIsEfiFile (Selected->Name)) {
-      SfbReportStatus (L"不是 EFI 应用", EFI_UNSUPPORTED);
+      SfbReportStatus (L"不是 EFI 应用程序", EFI_UNSUPPORTED);
       continue;
     }
 
@@ -584,7 +584,7 @@ SfbRunFileBrowser (VOID)
   UINTN           Cursor = 0;
   UINTN           Index;
 
-  SfbShowEnteringScreen (L"文件浏览器");
+  SfbShowEnteringScreen (L"EFI 程序选择器");
 
   /* Media may have been inserted since the loader started. */
   SfbStartFatStack ();
@@ -650,7 +650,7 @@ SfbRunFileBrowser (VOID)
     UINTN    Last;
     SFB_KEY  Key;
 
-    SfbBeginScreen (L"选择 EFI 程序", L"选择要浏览的存储卷");
+    SfbBeginScreen (L"EFI 程序选择器", L"选择要浏览的存储卷");
 
     Start = SfbWindowStart (Cursor, RowCount, AtUiVisibleRows ());
     Last = Start + AtUiVisibleRows ();

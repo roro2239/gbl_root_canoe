@@ -1138,14 +1138,14 @@ BOOLEAN
 SfbRunAdvancedMenu (VOID)
 {
   STATIC CONST CHAR16 Rows[5][SFB_ADV_ROW_CHARS] = {
-    L"进入 Fastboot",
+    L"进入 SuperFastboot",
     L"USB 大容量存储 >",
     L"存储卷 >",
     L"启动顺序 >",
     L"管理启动项 >"
   };
   CONST CHAR16 *LockHint =
-    L"设备已锁定：此处仅提供 Fastboot 授权";
+    L"设备已锁定：此处仅提供 SuperFastboot 授权";
   INTN Chosen;
   UINTN RowCount;
 

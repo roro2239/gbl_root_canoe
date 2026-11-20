@@ -65,7 +65,9 @@
 
 #include "AutoGen.h"
 #include "UsbSerial.h"
+#include <AndroidToolsUi.h>
 #include <Board.h>
+#include <Library/PrintLib.h>
 #include <Protocol/EFICardInfo.h>
 #include <Protocol/EFIPlatformInfoTypes.h>
 
@@ -266,25 +268,27 @@ GetPlatformInfo (struct BoardInfo *platform_board_info)
 {
   EFI_STATUS eResult;
   EFI_PLATFORMINFO_PROTOCOL *hPlatformInfoProtocol;
+  CHAR16 Message[64];
 
   eResult = gBS->LocateProtocol (&gEfiPlatformInfoProtocolGuid, NULL,
                                  (VOID **)&hPlatformInfoProtocol);
   if (eResult != EFI_SUCCESS) {
-    AsciiPrint ("Error: Failed to locate PlatformInfo protocol.\n");
+    AtUiShowMessage (L"无法找到 PlatformInfo 协议");
     goto endtest;
   }
 
   eResult = hPlatformInfoProtocol->GetPlatformInfo (
       hPlatformInfoProtocol, &platform_board_info->PlatformInfo);
   if (eResult != EFI_SUCCESS) {
-    AsciiPrint ("Error: GetPlatformInfo failed.\n");
+    AtUiShowMessage (L"无法读取平台信息");
     goto endtest;
   }
 
   if (platform_board_info->PlatformInfo.platform >=
       EFI_PLATFORMINFO_NUM_TYPES) {
-    AsciiPrint ("Error: Unknown platform type (%d).\n",
-                platform_board_info->PlatformInfo.platform);
+    UnicodeSPrint (Message, sizeof (Message), L"未知的平台类型（%u）",
+                   platform_board_info->PlatformInfo.platform);
+    AtUiShowMessage (Message);
     eResult = EFI_PROTOCOL_ERROR;
     goto endtest;
   }
