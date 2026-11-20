@@ -16,6 +16,7 @@
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
 #include <Library/MemoryAllocationLib.h>
+#include <Library/PrintLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiRuntimeServicesTableLib.h>
 #include <Library/UefiLib.h>
@@ -23,6 +24,7 @@
 
 #include "AtReboot.h"
 #include "AndroidToolsUi.h"
+#include "MenuScreen.h"
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(a)  (sizeof (a) / sizeof ((a)[0]))
@@ -124,6 +126,57 @@ Out:
 
 /* ---- menu --------------------------------------------------------------- */
 
+STATIC CONST struct {
+  CONST CHAR16   *Label;
+  CHAR8          *BootCommand;
+  UINT8          ResetReason;
+} mTargets[] = {
+  { L"进入 Fastbootd", AT_RECOVERY_BOOT_FASTBOOT, NORMAL_MODE },
+  { L"进入 Bootloader", NULL, FASTBOOT_MODE },
+  { L"进入 Recovery", AT_RECOVERY_BOOT_RECOVERY, NORMAL_MODE },
+  { L"重启系统", NULL, NORMAL_MODE }
+};
+
+#define BACK_ITEM      ARRAY_SIZE (mTargets)
+#define CHOICE_COUNT   (BACK_ITEM + 1)
+#define REBOOT_LINES   (CHOICE_COUNT + 3)
+
+STATIC EFI_STATUS
+DrawChoice (
+  IN MENU_SCREEN   *Screen,
+  IN UINTN         Item,
+  IN UINTN         Cursor
+  )
+{
+  CONST CHAR16 *Label = (Item == BACK_ITEM) ? L"返回" : mTargets[Item].Label;
+
+  return MenuScreenLine (Screen, 2 + Item, (Item == Cursor) ? MenuLineSelected : MenuLineNormal,
+                         Label, MAX_UINTN);
+}
+
+STATIC EFI_STATUS
+DrawMenu (
+  IN MENU_SCREEN   *Screen,
+  IN UINTN         Cursor,
+  IN CONST CHAR16  *Footer
+  )
+{
+  EFI_STATUS Status;
+  UINTN      Item;
+
+  Status = MenuScreenClear (Screen);
+  if (!EFI_ERROR (Status)) {
+    Status = MenuScreenLine (Screen, 0, MenuLineTitle, L"重启工具", MAX_UINTN);
+  }
+  for (Item = 0; Item < CHOICE_COUNT && !EFI_ERROR (Status); Item++) {
+    Status = DrawChoice (Screen, Item, Cursor);
+  }
+  if (!EFI_ERROR (Status)) {
+    Status = MenuScreenLine (Screen, REBOOT_LINES - 1, MenuLineHint, Footer, MAX_UINTN);
+  }
+  return Status;
+}
+
 EFI_STATUS
 EFIAPI
 RebootToolsEntry (
@@ -131,68 +184,86 @@ RebootToolsEntry (
   IN EFI_SYSTEM_TABLE *SystemTable
   )
 {
-  STATIC CONST CHAR16 *Items[] = {
-    L"Reboot to Fastbootd",
-    L"Reboot to Bootloader",
-    L"Reboot to Recovery",
-    L"Reboot to System",
-    L"Back",
-  };
-  UINTN      Sel;
-  EFI_STATUS Status;
+  MENU_SCREEN   Screen;
+  EFI_INPUT_KEY Key;
+  EFI_STATUS    Status;
+  UINTN         Cursor = 0;
+  UINTN         Previous;
+  UINTN         EventIndex;
+  CHAR16        Notice[64];
 
-  /*
-   * The power press that selected us in the super-fastboot menu is often still
-   * held when we start; drain it (after a release delay) so it cannot confirm
-   * the first entry the instant the menu appears.
-   */
-  AtUiEnterMenu (L"Reboot Tools");
+  Status = MenuScreenOpen (&Screen, REBOOT_LINES, REBOOT_LINES);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "RebootTools: opening menu failed: %r\n", Status));
+    return Status;
+  }
 
-  while (TRUE) {
-    Status = AtUiRunMenu (L"Reboot Tools", Items, ARRAY_SIZE (Items), &Sel,
-                          L"Vol+/- move, power select");
-    if (EFI_ERROR (Status)) {
-      continue;
-    }
-
-    switch (Sel) {
-    case 0:  /* Reboot to Fastbootd */
-      AtUiShowMessage (L"Rebooting to Fastbootd...");
-      Status = AtWriteRecoveryMessage (AT_RECOVERY_BOOT_FASTBOOT);
-      if (EFI_ERROR (Status)) {
-        AtUiReportStatus (L"Write BCB", Status);
-        break;
-      }
-      AtRebootDevice (NORMAL_MODE);
-      break;
-
-    case 1:  /* Reboot to Bootloader */
-      AtUiShowMessage (L"Rebooting to Bootloader...");
-      AtRebootDevice (FASTBOOT_MODE);
-      break;
-
-    case 2:  /* Reboot to Recovery */
-      AtUiShowMessage (L"Rebooting to Recovery...");
-      Status = AtWriteRecoveryMessage (AT_RECOVERY_BOOT_RECOVERY);
-      if (EFI_ERROR (Status)) {
-        AtUiReportStatus (L"Write BCB", Status);
-        break;
-      }
-      AtRebootDevice (NORMAL_MODE);
-      break;
-
-    case 3:  /* Reboot to System */
-      AtUiShowMessage (L"Rebooting to System...");
-      AtRebootDevice (NORMAL_MODE);
-      break;
-
-    case 4:  /* Back - exit to the boot menu */
-      return EFI_SUCCESS;
-
-    default:
-      break;
+  Status = DrawMenu (&Screen, Cursor, L"音量键移动，电源键确认");
+  if (!EFI_ERROR (Status)) {
+    // Discard the power press that launched the application before accepting a choice.
+    Status = gBS->Stall (2 * 1000 * 1000);
+    if (!EFI_ERROR (Status)) {
+      Status = gST->ConIn->Reset (gST->ConIn, FALSE);
     }
   }
 
-  return EFI_SUCCESS;
+  while (!EFI_ERROR (Status)) {
+    Status = gBS->WaitForEvent (1, &gST->ConIn->WaitForKey, &EventIndex);
+    if (EFI_ERROR (Status)) {
+      break;
+    }
+    Status = gST->ConIn->ReadKeyStroke (gST->ConIn, &Key);
+    if (Status == EFI_NOT_READY) {
+      Status = EFI_SUCCESS;
+      continue;
+    }
+    if (EFI_ERROR (Status)) {
+      break;
+    }
+    if (Key.ScanCode == SCAN_UP || Key.ScanCode == SCAN_DOWN) {
+      Previous = Cursor;
+      AtUiMoveCursor (&Cursor, CHOICE_COUNT, (Key.ScanCode == SCAN_UP) ? AtKeyUp : AtKeyDown);
+      Status = DrawChoice (&Screen, Previous, Cursor);
+      if (!EFI_ERROR (Status)) {
+        Status = DrawChoice (&Screen, Cursor, Cursor);
+      }
+      continue;
+    }
+    if (Key.ScanCode != SCAN_NULL || Key.UnicodeChar != CHAR_CARRIAGE_RETURN) {
+      continue;
+    }
+    if (Cursor == BACK_ITEM) {
+      break;
+    }
+
+    Status = MenuScreenClear (&Screen);
+    if (!EFI_ERROR (Status)) {
+      Status = MenuScreenLine (&Screen, 3, MenuLineTitle, L"正在重启", MAX_UINTN);
+    }
+    if (!EFI_ERROR (Status)) {
+      Status = MenuScreenLine (&Screen, 4, MenuLineNormal, mTargets[Cursor].Label, MAX_UINTN);
+    }
+    if (EFI_ERROR (Status)) {
+      break;
+    }
+    if (mTargets[Cursor].BootCommand != NULL) {
+      Status = AtWriteRecoveryMessage (mTargets[Cursor].BootCommand);
+    }
+    if (!EFI_ERROR (Status)) {
+      AtRebootDevice (mTargets[Cursor].ResetReason);
+      Status = EFI_DEVICE_ERROR; // A successful ResetSystem never returns.
+    }
+    DEBUG ((DEBUG_ERROR, "RebootTools: menu item %u failed: %r\n", Cursor, Status));
+    UnicodeSPrint (Notice, sizeof (Notice), L"重启失败 0x%lx", (UINT64)Status);
+    Status = DrawMenu (&Screen, Cursor, Notice);
+  }
+
+  if (!EFI_ERROR (Status)) {
+    Status = MenuScreenClear (&Screen);
+  }
+  MenuScreenClose (&Screen);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "RebootTools: menu failed: %r\n", Status));
+  }
+  return Status;
 }

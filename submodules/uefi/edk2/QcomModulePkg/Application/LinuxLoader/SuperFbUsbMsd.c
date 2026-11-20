@@ -149,6 +149,7 @@ SfbUsbMsdExportBlkIo (IN EFI_BLOCK_IO_PROTOCOL *BlkIo,
   BOOLEAN               Cancelled = FALSE;
   BOOLEAN               HostEjected = FALSE;
   UINT32                Consecutive = 0;
+  CHAR16                SizeText[96];
 
   if (BlkIo == NULL || BlkIo->Media == NULL || !BlkIo->Media->MediaPresent) {
     return EFI_NO_MEDIA;
@@ -186,17 +187,17 @@ SfbUsbMsdExportBlkIo (IN EFI_BLOCK_IO_PROTOCOL *BlkIo,
    * confirm keystroke is still queued here, so the screen must be visible
    * before the drain hands control to the export loop.
    */
-  SfbBeginScreen ((Title != NULL) ? Title : L"USB Mass Storage",
-                  L"The host may now mount the disk.");
+  SfbBeginScreen ((Title != NULL) ? Title : L"USB 大容量存储",
+                  L"主机现在可以挂载磁盘。");
   if (Detail != NULL && Detail[0] != L'\0') {
-    Print (L"  %s\r\n", Detail);
+    AtUiDrawNote (Detail);
   }
   if (Bytes != 0) {
-    Print (L"  Size: %Lu bytes (%Lu MiB)\r\n", Bytes, Bytes / (1024 * 1024));
+    UnicodeSPrint (SizeText, sizeof (SizeText), L"容量：%Lu 字节（%Lu MiB）",
+                   Bytes, Bytes / (1024 * 1024));
+    AtUiDrawNote (SizeText);
   }
-  Print (L"\r\n");
-  Print (L"  Volume Down ends this session.\r\n");
-  SfbEndScreen (L"Volume Down: stop export");
+  SfbEndScreen (L"音量下键停止导出");
 
   /* Nothing queued may reach the cancel test. */
   SfbMsdDrainKeys ();

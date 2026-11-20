@@ -116,12 +116,12 @@ BlConfirm (
   gST->ConIn->Reset (gST->ConIn, FALSE);
 
   AtUiBeginScreen (Title, NULL);
-  Print (L"%s\r\n", (Warning != NULL) ? Warning : L"");
-  Print (L"\r\nPower = confirm   Vol+/- = cancel\r\n");
+  AtUiDrawNote ((Warning != NULL) ? Warning : L"");
+  AtUiEndScreen (L"电源键确认，音量键取消");
 
   Key = AtUiWaitForKey (0);
   if (Key != AtKeySelect) {
-    AtUiShowMessage (L"Cancelled");
+    AtUiShowMessage (L"已取消");
     gBS->Stall (1000000);
     return FALSE;
   }
@@ -159,19 +159,19 @@ BlApply (
 
   if (NewUnlock == Info->is_unlocked &&
       NewCritical == Info->is_unlock_critical) {
-    AtUiShowMessage (L"State unchanged");
+    AtUiShowMessage (L"状态未改变");
     AtUiWaitForKey (0);
     return;
   }
 
   UnicodeSPrint (Warning, sizeof (Warning),
-                 L"%s - writes DeviceInfo. May cause data loss.",
+                 L"%s：将写入 DeviceInfo。可能丢失数据。",
                  Action);
   if (!BlConfirm (Action, Warning)) {
     return;
   }
 
-  AtUiShowMessage (L"Applying...");
+  AtUiShowMessage (L"正在应用...");
 
   OldUnlock   = Info->is_unlocked;
   OldCritical = Info->is_unlock_critical;
@@ -183,11 +183,11 @@ BlApply (
     /* Roll back the in-memory copy; the on-disk blob was not changed. */
     Info->is_unlocked        = OldUnlock;
     Info->is_unlock_critical = OldCritical;
-    AtUiReportStatus (L"Write DeviceInfo", Status);
+    AtUiReportStatus (L"写入 DeviceInfo", Status);
     return;
   }
 
-  AtUiShowMessage (L"Done. Reboot for the change to take effect.");
+  AtUiShowMessage (L"操作完成，重启后生效。");
   AtUiWaitForKey (0);
 }
 
@@ -211,7 +211,7 @@ BlToggleUnlock (
   }
 
   BlApply (Info, NewUnlock, NewCritical,
-           NewUnlock ? L"Unlock Device" : L"Lock Device");
+           NewUnlock ? L"解锁设备" : L"锁定设备");
 }
 
 /**
@@ -232,7 +232,7 @@ BlToggleCritical (
   }
 
   BlApply (Info, NewUnlock, NewCritical,
-           NewCritical ? L"Unlock Critical" : L"Lock Critical");
+           NewCritical ? L"解锁关键分区" : L"锁定关键分区");
 }
 
 /* ---- entry point -------------------------------------------------------- */
@@ -257,18 +257,21 @@ BlToolsEntry (
    * held when we start; AtUiEnterMenu waits for it to release and drains the
    * queue so it cannot confirm the first entry the instant the menu appears.
    */
-  AtUiEnterMenu (L"BL Tools");
+  Status = AtUiEnterMenu (L"BL 锁状态工具");
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
 
   Status = AtDevInfoRead (&Info);
   if (EFI_ERROR (Status)) {
-    AtUiReportStatus (L"Read DeviceInfo", Status);
+    AtUiReportStatus (L"读取 DeviceInfo", Status);
     return EFI_SUCCESS;
   }
 
   /* Refuse to operate on an uninitialized/corrupt blob: its fields are garbage
    * and writing them back could clobber unrelated areas, so abort like ArbTools. */
   if (CompareMem (Info.magic, DEVICE_MAGIC, DEVICE_MAGIC_SIZE) != 0) {
-    AtUiShowMessage (L"DeviceInfo not initialized");
+    AtUiShowMessage (L"DeviceInfo 尚未初始化");
     AtUiWaitForKey (0);
     return EFI_SUCCESS;
   }
@@ -276,22 +279,22 @@ BlToolsEntry (
   while (TRUE) {
     /* The live state rides in the title bar so the action labels never
      * contradict what is actually persisted. */
-    UnicodeSPrint (Title, sizeof (Title), L"BL Tools  Unlock:%s  Crit:%s",
-                   Info.is_unlocked ? L"on" : L"off",
-                   Info.is_unlock_critical ? L"on" : L"off");
+    UnicodeSPrint (Title, sizeof (Title), L"设备解锁：%s  关键分区解锁：%s",
+                   Info.is_unlocked ? L"开" : L"关",
+                   Info.is_unlock_critical ? L"开" : L"关");
     UnicodeSPrint (LabelUnlock, sizeof (LabelUnlock),
-                   Info.is_unlocked ? L"Lock Device" : L"Unlock Device");
+                   Info.is_unlocked ? L"锁定设备" : L"解锁设备");
     UnicodeSPrint (LabelCritical, sizeof (LabelCritical),
-                   Info.is_unlock_critical ? L"Lock Critical" : L"Unlock Critical");
+                   Info.is_unlock_critical ? L"锁定关键分区" : L"解锁关键分区");
 
     Items[0] = LabelUnlock;
     Items[1] = LabelCritical;
-    Items[2] = L"Back";
+    Items[2] = L"返回";
 
     Status = AtUiRunMenu (Title, Items, ARRAY_SIZE (Items), &Sel,
-                          L"Vol+/- move, power select");
+                          L"音量键移动，电源键确认");
     if (EFI_ERROR (Status)) {
-      continue;
+      return Status;
     }
 
     switch (Sel) {

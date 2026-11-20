@@ -1,6 +1,5 @@
 /** @file
- *  Console menu UI for AndroidToolsPkg, ported from the super-fastboot boot
- *  menu (SuperFbMenu.c). Volume up/down move the cursor, power confirms.
+ *  Menu UI shared by the boot loader and its standalone tools.
  *
  *  Copyright (c) 2026, contributors to the canoe ABL tree.
  *  SPDX-License-Identifier: BSD-3-Clause
@@ -18,14 +17,66 @@
 #include <Protocol/SimpleTextOut.h>
 
 #include "AndroidToolsUi.h"
+#include "MenuScreen.h"
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(a)  (sizeof (a) / sizeof ((a)[0]))
 #endif
 
-#define AT_ATTR_NORMAL    EFI_TEXT_ATTR (EFI_LIGHTGRAY, EFI_BLACK)
-#define AT_ATTR_SELECTED  EFI_TEXT_ATTR (EFI_BLACK, EFI_LIGHTGRAY)
-#define AT_ATTR_TITLE     EFI_TEXT_ATTR (EFI_WHITE, EFI_BLACK)
+#define AT_SCREEN_LINES  (AT_VISIBLE_ROWS + 6)
+
+STATIC MENU_SCREEN mScreen;
+STATIC EFI_STATUS  mDrawStatus;
+STATIC UINTN       mNextRow;
+STATIC UINTN       mVisibleRows;
+
+RETURN_STATUS
+EFIAPI
+AtUiReleaseScreen (VOID)
+{
+  if (mScreen.Lines != 0) {
+    MenuScreenClose (&mScreen);
+  }
+  return EFI_SUCCESS;
+}
+
+STATIC VOID
+DrawLine (IN UINTN Row, IN MENU_LINE_STYLE Style, IN CONST CHAR16 *Text, IN UINTN Length)
+{
+  if (!EFI_ERROR (mDrawStatus)) {
+    mDrawStatus = MenuScreenLine (&mScreen, Row, Style, Text, Length);
+    if (EFI_ERROR (mDrawStatus)) {
+      DEBUG ((DEBUG_ERROR, "Menu: drawing row %u failed: %r\n", (UINT32)Row, mDrawStatus));
+    }
+  }
+}
+
+EFI_STATUS
+AtUiScreenStatus (VOID)
+{
+  return mDrawStatus;
+}
+
+VOID
+AtUiShowBanner (IN CONST CHAR16 *Text, IN BOOLEAN ClearScreen)
+{
+  mDrawStatus = EFI_SUCCESS;
+  /* 返回菜单时，刚运行的固件程序可能已经切换了显示模式。 */
+  if (mScreen.Graphics != NULL && mScreen.Graphics->Mode->Mode != mScreen.GraphicsMode) {
+    MenuScreenClose (&mScreen);
+  }
+  if (mScreen.Lines == 0) {
+    mDrawStatus = MenuScreenOpen (&mScreen, 7, AT_SCREEN_LINES);
+  }
+  if (!EFI_ERROR (mDrawStatus) && ClearScreen) {
+    mDrawStatus = MenuScreenClear (&mScreen);
+  }
+  if (EFI_ERROR (mDrawStatus)) {
+    DEBUG ((DEBUG_ERROR, "Menu: opening screen failed: %r\n", mDrawStatus));
+    return;
+  }
+  DrawLine (0, MenuLineTitle, Text, MAX_UINTN);
+}
 
 /* Seconds to wait for the key that launched us to be released before the
  * input queue is drained. Mirrors SFB_ENTER_MENU_DELAY_S in SuperFbMenu.c:
@@ -46,6 +97,9 @@ AtUiWaitForKey (
   EFI_INPUT_KEY  Key;
   AT_KEY         Result = AtKeyTimeout;
 
+  if (EFI_ERROR (mDrawStatus)) {
+    return AtKeyTimeout;
+  }
   if (TimeoutMs != 0) {
     Status = gBS->CreateEvent (EVT_TIMER, TPL_CALLBACK, NULL, NULL, &TimerEvent);
     if (EFI_ERROR (Status)) {
@@ -112,23 +166,22 @@ AtUiWaitForKey (
  * the LoadImage/StartImage transition would be read back at once and confirm
  * the first menu entry. Mirrors SfbShowEnteringMenu in SuperFbMenu.c.
  */
-VOID
+EFI_STATUS
 AtUiEnterMenu (
   IN CONST CHAR16 *Title
   )
 {
-  gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_TITLE);
-  gST->ConOut->ClearScreen (gST->ConOut);
-  gST->ConOut->EnableCursor (gST->ConOut, FALSE);
-  Print (L"Entering %s\r\n", (Title != NULL) ? Title : L"Menu");
-  gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_NORMAL);
+  AtUiShowBanner ((Title != NULL) ? Title : L"菜单", TRUE);
+  if (EFI_ERROR (mDrawStatus)) {
+    return mDrawStatus;
+  }
 
   /* Wait for the launching key to be released... */
   gBS->Stall (AT_ENTER_MENU_DELAY_S * 1000 * 1000);
 
   /* ...then drop anything typed or held during the wait so it does not leak
    * into the menu as a spurious confirm. */
-  gST->ConIn->Reset (gST->ConIn, FALSE);
+  return gST->ConIn->Reset (gST->ConIn, FALSE);
 }
 
 /* ---- drawing ------------------------------------------------------------ */
@@ -139,15 +192,17 @@ AtUiBeginScreen (
   IN CONST CHAR16 *Subtitle
   )
 {
-  gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_TITLE);
-  gST->ConOut->ClearScreen (gST->ConOut);
-  gST->ConOut->EnableCursor (gST->ConOut, FALSE);
-  Print (L"%s\r\n", Title);
-  gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_NORMAL);
-  if (Subtitle != NULL) {
-    Print (L"%s\r\n", Subtitle);
+  AtUiShowBanner (Title, TRUE);
+  mNextRow = 1;
+  mVisibleRows = 0;
+  if (EFI_ERROR (mDrawStatus)) {
+    return;
   }
-  Print (L"\r\n");
+  if (Subtitle != NULL) {
+    DrawLine (mNextRow++, MenuLineHint, Subtitle, MAX_UINTN);
+  }
+  /* 最后两行提示和一行页脚不计入列表窗口。 */
+  mVisibleRows = MIN (AT_VISIBLE_ROWS, mScreen.Lines - mNextRow - 3);
 }
 
 VOID
@@ -155,9 +210,8 @@ AtUiEndScreen (
   IN CONST CHAR16 *Footer
   )
 {
-  gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_NORMAL);
   if (Footer != NULL) {
-    Print (L"\r\n%s\r\n", Footer);
+    DrawLine (mScreen.Lines - 1, MenuLineHint, Footer, MAX_UINTN);
   }
 }
 
@@ -168,12 +222,39 @@ AtUiDrawRow (
   IN CONST CHAR16 *Text
   )
 {
-  gST->ConOut->SetAttribute (gST->ConOut,
-                             Selected ? AT_ATTR_SELECTED : AT_ATTR_NORMAL);
-  Print (L"%s %s %s", Selected ? L">" : L" ",
-         (Marker != NULL) ? Marker : L" ", (Text != NULL) ? Text : L"");
-  gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_NORMAL);
-  Print (L"\r\n");
+  CHAR16 Line[512];
+
+  if (Text == NULL) {
+    Text = L"";
+  }
+  if (Marker != NULL && Marker[0] != L'\0' && StrCmp (Marker, L" ") != 0) {
+    UnicodeSPrint (Line, sizeof (Line), L"%s %s", Marker, Text);
+    Text = Line;
+  }
+  DrawLine (mNextRow++, Selected ? MenuLineSelected : MenuLineNormal, Text, MAX_UINTN);
+}
+
+UINTN
+AtUiVisibleRows (VOID)
+{
+  return mVisibleRows;
+}
+
+VOID
+AtUiDrawNote (IN CONST CHAR16 *Text)
+{
+  UINTN Count;
+
+  while (!EFI_ERROR (mDrawStatus) && *Text != 0) {
+    if (mNextRow >= mScreen.Lines - 1) {
+      mDrawStatus = EFI_BAD_BUFFER_SIZE;
+      DEBUG ((DEBUG_ERROR, "Menu: no room for message\n"));
+      return;
+    }
+    Count = (mNextRow == mScreen.Lines - 2) ? StrLen (Text) : MenuScreenFit (&mScreen, Text);
+    DrawLine (mNextRow++, MenuLineNormal, Text, Count);
+    Text += Count;
+  }
 }
 
 UINTN
@@ -218,11 +299,7 @@ AtUiShowMessage (
   IN CONST CHAR16 *Text
   )
 {
-  gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_TITLE);
-  gST->ConOut->ClearScreen (gST->ConOut);
-  gST->ConOut->EnableCursor (gST->ConOut, FALSE);
-  Print (L"\r\n\r\n  %s\r\n", (Text != NULL) ? Text : L"");
-  gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_NORMAL);
+  AtUiShowBanner ((Text != NULL) ? Text : L"", TRUE);
 }
 
 VOID
@@ -231,9 +308,12 @@ AtUiReportStatus (
   IN EFI_STATUS    Status
   )
 {
-  gST->ConOut->SetAttribute (gST->ConOut, AT_ATTR_NORMAL);
-  Print (L"\r\n%s: %r\r\n", (What != NULL) ? What : L"", Status);
-  Print (L"Press power to continue.\r\n");
+  CHAR16 Code[40];
+
+  AtUiBeginScreen ((What != NULL) ? What : L"操作结果", NULL);
+  UnicodeSPrint (Code, sizeof (Code), L"状态码 0x%lx", (UINT64)Status);
+  AtUiDrawNote (Code);
+  AtUiEndScreen (L"按电源键继续");
   AtUiWaitForKey (0);
 }
 
@@ -259,10 +339,12 @@ AtUiRunMenu (
   /* Drop anything held since launch so it does not move the cursor at once. */
   gST->ConIn->Reset (gST->ConIn, FALSE);
 
-  Visible = (Count < AT_VISIBLE_ROWS) ? Count : AT_VISIBLE_ROWS;
-
   while (TRUE) {
     AtUiBeginScreen (Title, NULL);
+    if (EFI_ERROR (mDrawStatus)) {
+      return mDrawStatus;
+    }
+    Visible = MIN (Count, AtUiVisibleRows ());
 
     Start = AtUiWindowStart (Cursor, Count, Visible);
     for (Index = Start; Index < Start + Visible && Index < Count; Index++) {
@@ -270,6 +352,9 @@ AtUiRunMenu (
     }
 
     AtUiEndScreen (Footer);
+    if (EFI_ERROR (mDrawStatus)) {
+      return mDrawStatus;
+    }
 
     Key = AtUiWaitForKey (0);
     if (Key == AtKeySelect) {

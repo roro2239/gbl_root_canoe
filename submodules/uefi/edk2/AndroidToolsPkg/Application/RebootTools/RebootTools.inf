@@ -26,6 +26,7 @@
   BaseMemoryLib
   DebugLib
   MemoryAllocationLib
+  PrintLib
   UefiApplicationEntryPoint
   UefiBootServicesTableLib
   UefiRuntimeServicesTableLib

@@ -1,5 +1,5 @@
 /*
- * Console UI for the super-fastboot boot menu.
+ * UI for the super-fastboot boot menu.
  *
  * Three keys drive everything: volume up and volume down move the cursor, and
  * power confirms.
@@ -24,10 +24,6 @@
 /* Keeps the translation unit legal when the feature is compiled out. */
 CONST CHAR8 *gSfbMenuModuleTag = "SuperFbMenu";
 
-#define SFB_ATTR_NORMAL    EFI_TEXT_ATTR (EFI_LIGHTGRAY, EFI_BLACK)
-#define SFB_ATTR_SELECTED  EFI_TEXT_ATTR (EFI_BLACK, EFI_LIGHTGRAY)
-#define SFB_ATTR_TITLE     EFI_TEXT_ATTR (EFI_WHITE, EFI_BLACK)
-
 SFB_KEY
 SfbWaitForKey (IN UINT32 TimeoutMs)
 {
@@ -39,6 +35,9 @@ SfbWaitForKey (IN UINT32 TimeoutMs)
   EFI_INPUT_KEY  Key;
   SFB_KEY        Result = SfbKeyTimeout;
 
+  if (EFI_ERROR (AtUiScreenStatus ())) {
+    return SfbKeyDisplayError;
+  }
   if (TimeoutMs != 0) {
     Status = gBS->CreateEvent (EVT_TIMER, TPL_CALLBACK, NULL, NULL, &TimerEvent);
     if (EFI_ERROR (Status)) {
@@ -107,33 +106,30 @@ SfbWaitForKey (IN UINT32 TimeoutMs)
 /* ---- drawing ------------------------------------------------------------ */
 
 VOID
-SfbBeginScreen (IN CONST CHAR16 *Title, IN CONST CHAR16 *Subtitle)
+SfbBeginScreen (IN CONST CHAR16 *Title OPTIONAL, IN CONST CHAR16 *Subtitle OPTIONAL)
 {
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_TITLE);
-  gST->ConOut->ClearScreen (gST->ConOut);
-  Print (L"%s\r\n", Title);
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_NORMAL);
-  if (Subtitle != NULL) {
-    Print (L"%s\r\n", Subtitle);
-  }
-  Print (L"\r\n");
+  AtUiBeginScreen ((Title != NULL) ? Title : gSfbRootTitle, Subtitle);
 }
 
 VOID
 SfbEndScreen (IN CONST CHAR16 *Footer)
 {
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_NORMAL);
-  Print (L"\r\n%s\r\n", Footer);
+  AtUiEndScreen (Footer);
 }
 
 VOID
 SfbDrawRow (IN BOOLEAN Selected, IN CONST CHAR16 *Marker, IN CONST CHAR16 *Text)
 {
-  gST->ConOut->SetAttribute (gST->ConOut,
-                             Selected ? SFB_ATTR_SELECTED : SFB_ATTR_NORMAL);
-  Print (L"%s %s %s", Selected ? L">" : L" ", Marker, Text);
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_NORMAL);
-  Print (L"\r\n");
+  AtUiDrawRow (Selected, Marker, Text);
+}
+
+VOID
+SfbDrawMore (IN UINTN Remaining)
+{
+  CHAR16 Text[32];
+
+  UnicodeSPrint (Text, sizeof (Text), L"还有 %u 项", (UINT32)Remaining);
+  AtUiDrawNote (Text);
 }
 
 /*
@@ -143,7 +139,7 @@ SfbDrawRow (IN BOOLEAN Selected, IN CONST CHAR16 *Marker, IN CONST CHAR16 *Text)
 UINTN
 SfbWindowStart (IN UINTN Cursor, IN UINTN Count, IN UINTN Rows)
 {
-  if (Count <= Rows) {
+  if (Rows == 0 || Count <= Rows) {
     return 0;
   }
   if (Cursor < Rows / 2) {
@@ -175,10 +171,7 @@ SfbMoveCursor (IN OUT UINTN *Cursor, IN UINTN Count, IN SFB_KEY Key)
 VOID
 SfbReportStatus (IN CONST CHAR16 *What, IN EFI_STATUS Status)
 {
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_NORMAL);
-  Print (L"\r\n%s: %r\r\n", What, Status);
-  Print (L"Press power to continue.\r\n");
-  SfbWaitForKey (0);
+  AtUiReportStatus (What, Status);
 }
 
 /*
@@ -190,13 +183,7 @@ SfbReportStatus (IN CONST CHAR16 *What, IN EFI_STATUS Status)
 VOID
 SfbShowFastbootMode (VOID)
 {
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_TITLE);
-  gST->ConOut->ClearScreen (gST->ConOut);
-  gST->ConOut->EnableCursor (gST->ConOut, FALSE);
-
-  Print (L"FASTBOOT MODE\r\n");
-
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_NORMAL);
+  AtUiShowMessage (L"Fastboot 模式");
 }
 
 /*
@@ -207,20 +194,10 @@ SfbShowFastbootMode (VOID)
 VOID
 SfbShowBootingScreen (IN CONST CHAR16 *Name, IN BOOLEAN ClearScreen)
 {
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_TITLE);
-  /*
-   * An unattended default boot must not blank whatever is already on screen
-   * (typically the boot splash): only clear when the launch came from the menu,
-   * where the menu itself is what needs clearing away.
-   */
-  if (ClearScreen) {
-    gST->ConOut->ClearScreen (gST->ConOut);
-  }
-  gST->ConOut->EnableCursor (gST->ConOut, FALSE);
+  CHAR16 Text[SFB_NAME_CHARS + 8];
 
-  Print (L"Booting %s\r\n", (Name != NULL && Name[0] != L'\0') ? Name : L"...");
-
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_NORMAL);
+  UnicodeSPrint (Text, sizeof (Text), L"正在启动 %s", (Name != NULL) ? Name : L"");
+  AtUiShowBanner (Text, ClearScreen);
 }
 
 /*
@@ -231,17 +208,11 @@ SfbShowBootingScreen (IN CONST CHAR16 *Name, IN BOOLEAN ClearScreen)
 VOID
 SfbShowActionScreen (IN CONST CHAR16 *Text)
 {
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_TITLE);
-  gST->ConOut->ClearScreen (gST->ConOut);
-  gST->ConOut->EnableCursor (gST->ConOut, FALSE);
-
-  Print (L"%s\r\n", Text);
-
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_NORMAL);
+  AtUiShowMessage (Text);
 }
 
 /*
- * Seconds to hold on the "Entering Boot Menu" screen before the menu starts
+ * Seconds to hold on the root title screen before the menu starts
  * taking input. Long enough that a volume key held from power-on has been
  * released, so it does not immediately move the menu cursor.
  */
@@ -250,13 +221,7 @@ SfbShowActionScreen (IN CONST CHAR16 *Text)
 VOID
 SfbShowEnteringMenu (VOID)
 {
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_TITLE);
-  gST->ConOut->ClearScreen (gST->ConOut);
-  gST->ConOut->EnableCursor (gST->ConOut, FALSE);
-
-  Print (L"Entering Boot Menu\r\n");
-
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_NORMAL);
+  AtUiShowMessage (gSfbRootTitle);
 
   /* Wait for the key to be released... */
   gBS->Stall (SFB_ENTER_MENU_DELAY_S * 1000 * 1000);
@@ -279,13 +244,10 @@ SfbShowEnteringMenu (VOID)
 VOID
 SfbShowEnteringScreen (IN CONST CHAR16 *What)
 {
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_TITLE);
-  gST->ConOut->ClearScreen (gST->ConOut);
-  gST->ConOut->EnableCursor (gST->ConOut, FALSE);
+  CHAR16 Text[SFB_NAME_CHARS + 8];
 
-  Print (L"Entering %s\r\n", (What != NULL) ? What : L"...");
-
-  gST->ConOut->SetAttribute (gST->ConOut, SFB_ATTR_NORMAL);
+  UnicodeSPrint (Text, sizeof (Text), L"正在进入%s", (What != NULL) ? What : L"菜单");
+  AtUiShowMessage (Text);
 
   /* Wait for the key to be released, then drop anything typed or held during
    * the wait so it does not leak into the submenu as a spurious keypress. */
@@ -320,6 +282,7 @@ typedef struct {
   SFB_ROW_KIND  Kind;
   UINTN         Entry;
   CHAR16        Text[SFB_NAME_CHARS];
+  CONST CHAR16  *FolderCaption;
 } SFB_MENU_ROW;
 
 #define SFB_MAX_MENU_ROWS  (SFB_MAX_ENTRIES + 4)
@@ -337,6 +300,7 @@ SfbAddRow (IN OUT SFB_MENU_ROW  *Rows,
   }
   Rows[*Count].Kind = Kind;
   Rows[*Count].Entry = Entry;
+  Rows[*Count].FolderCaption = NULL;
   StrnCpyS (Rows[*Count].Text, SFB_NAME_CHARS, Text, SFB_NAME_CHARS - 1);
   (*Count)++;
 }
@@ -358,6 +322,7 @@ SfbBuildRows (IN CONST SFB_ENTRY_LIST *List,
   CHAR16   Child[SFB_NAME_CHARS];
   BOOLEAN  IsFolder;
   BOOLEAN  Seen;
+  CONST CHAR16 *MenuName;
 
   for (Index = 0; Index < List->Count; Index++) {
     /* Hidden entries are still normal boot entries in the boot order; only
@@ -366,12 +331,14 @@ SfbBuildRows (IN CONST SFB_ENTRY_LIST *List,
     if (SfbEntryNameHidden (List->Entry[Index].Spec.Name)) {
       continue;
     }
-    if (!SfbEntryNameChild (List->Entry[Index].Spec.Name, Prefix, Child,
+    MenuName = SfbEntryMenuName (&List->Entry[Index].Spec);
+    if (!SfbEntryNameChild (MenuName, Prefix, Child,
                             ARRAY_SIZE (Child), &IsFolder)) {
       continue;
     }
     if (!IsFolder) {
-      SfbAddRow (Rows, &Count, SfbRowEntry, Index, Child);
+      SfbAddRow (Rows, &Count, SfbRowEntry, Index,
+                 SfbEntryDisplayName (&List->Entry[Index].Spec, Child));
       continue;
     }
     Seen = FALSE;
@@ -384,14 +351,22 @@ SfbBuildRows (IN CONST SFB_ENTRY_LIST *List,
     if (!Seen) {
       SfbAddRow (Rows, &Count, SfbRowFolder, SFB_NO_INDEX, Child);
     }
+    if (Prefix[0] == L'\0' && Row < Count &&
+        SfbEntryDisplayName (&List->Entry[Index].Spec, NULL) != NULL) {
+      if (StrCmp (Child, L"Boot Modes") == 0) {
+        Rows[Row].FolderCaption = L"启动方式";
+      } else if (StrCmp (Child, L"Android Tools") == 0) {
+        Rows[Row].FolderCaption = L"Android 工具";
+      }
+    }
   }
 
   if (Prefix[0] == L'\0') {
-    SfbAddRow (Rows, &Count, SfbRowAdvanced, SFB_NO_INDEX, L"Advanced");
-    SfbAddRow (Rows, &Count, SfbRowPowerOff, SFB_NO_INDEX, L"Power Off");
-    SfbAddRow (Rows, &Count, SfbRowRestart, SFB_NO_INDEX, L"Restart");
+    SfbAddRow (Rows, &Count, SfbRowAdvanced, SFB_NO_INDEX, L"高级选项");
+    SfbAddRow (Rows, &Count, SfbRowPowerOff, SFB_NO_INDEX, L"关机");
+    SfbAddRow (Rows, &Count, SfbRowRestart, SFB_NO_INDEX, L"重启");
   } else {
-    SfbAddRow (Rows, &Count, SfbRowBack, SFB_NO_INDEX, L"Back");
+    SfbAddRow (Rows, &Count, SfbRowBack, SFB_NO_INDEX, L"返回");
   }
   return Count;
 }
@@ -401,7 +376,7 @@ VOID
 SfbDrawMenu (IN CONST SFB_MENU_ROW *Rows,
              IN UINTN              Count,
              IN UINTN              Cursor,
-             IN CONST CHAR16       *Title)
+             IN CONST CHAR16       *Title OPTIONAL)
 {
   UINTN   Start;
   UINTN   Index;
@@ -410,8 +385,8 @@ SfbDrawMenu (IN CONST SFB_MENU_ROW *Rows,
 
   SfbBeginScreen (Title, NULL);
 
-  Start = SfbWindowStart (Cursor, Count, SFB_VISIBLE_ROWS);
-  Last = Start + SFB_VISIBLE_ROWS;
+  Start = SfbWindowStart (Cursor, Count, AtUiVisibleRows ());
+  Last = Start + AtUiVisibleRows ();
   if (Last > Count) {
     Last = Count;
   }
@@ -420,7 +395,8 @@ SfbDrawMenu (IN CONST SFB_MENU_ROW *Rows,
     /* Folder rows get a trailing '>' so it is obvious they open another list
      * rather than launch an image. */
     if (Rows[Index].Kind == SfbRowFolder) {
-      UnicodeSPrint (Text, sizeof (Text), L"%s >", Rows[Index].Text);
+      UnicodeSPrint (Text, sizeof (Text), L"%s >",
+                     (Rows[Index].FolderCaption != NULL) ? Rows[Index].FolderCaption : Rows[Index].Text);
       SfbDrawRow ((BOOLEAN)(Index == Cursor), L" ", Text);
     } else {
       SfbDrawRow ((BOOLEAN)(Index == Cursor), L" ", Rows[Index].Text);
@@ -428,10 +404,10 @@ SfbDrawMenu (IN CONST SFB_MENU_ROW *Rows,
   }
 
   if (Last < Count) {
-    Print (L"    ... %u more\r\n", (UINT32)(Count - Last));
+    SfbDrawMore (Count - Last);
   }
 
-  SfbEndScreen (L"Vol Up/Down: move   Power: select");
+  SfbEndScreen (L"音量键移动，电源键确认");
 }
 
 /* Refresh the shared list from the volumes and store the result. */
@@ -454,7 +430,7 @@ SfbRefreshEntries (VOID)
  */
 STATIC
 BOOLEAN
-SfbRunMenuLevel (IN CONST CHAR16 *Prefix, IN UINTN Depth)
+SfbRunMenuLevel (IN CONST CHAR16 *Prefix, IN UINTN Depth, IN CONST CHAR16 *Title OPTIONAL)
 {
   SFB_ENTRY_LIST  *List = SfbEntries ();
   SFB_MENU_ROW    *Rows;
@@ -481,12 +457,14 @@ SfbRunMenuLevel (IN CONST CHAR16 *Prefix, IN UINTN Depth)
       Rebuild = FALSE;
     }
 
-    SfbDrawMenu (Rows, Count, Cursor, (Prefix[0] == L'\0') ? L"Boot Menu"
-                                                          : Prefix);
+    SfbDrawMenu (Rows, Count, Cursor, Title);
 
     /* The menu is purely interactive: it waits for a key indefinitely and
      * never launches anything unattended. */
     Key = SfbWaitForKey (0);
+    if (Key == SfbKeyDisplayError) {
+      goto Done;
+    }
     if (Key == SfbKeyUp || Key == SfbKeyDown) {
       SfbMoveCursor (&Cursor, Count, Key);
       continue;
@@ -503,7 +481,7 @@ SfbRunMenuLevel (IN CONST CHAR16 *Prefix, IN UINTN Depth)
 
     case SfbRowFolder:
       if (Depth >= SFB_MAX_MENU_DEPTH) {
-        SfbReportStatus (L"Menu too deep", EFI_BUFFER_TOO_SMALL);
+        SfbReportStatus (L"菜单层级过深", EFI_BUFFER_TOO_SMALL);
         break;
       }
       if (Prefix[0] == L'\0') {
@@ -512,7 +490,8 @@ SfbRunMenuLevel (IN CONST CHAR16 *Prefix, IN UINTN Depth)
         UnicodeSPrint (ChildPrefix, SFB_NAME_CHARS * 2 * sizeof (CHAR16),
                        L"%s\\%s", Prefix, Rows[Cursor].Text);
       }
-      if (SfbRunMenuLevel (ChildPrefix, Depth + 1)) {
+      if (SfbRunMenuLevel (ChildPrefix, Depth + 1, (Rows[Cursor].FolderCaption != NULL) ?
+                           Rows[Cursor].FolderCaption : Rows[Cursor].Text)) {
         Fastboot = TRUE;
         goto Done;
       }
@@ -532,12 +511,12 @@ SfbRunMenuLevel (IN CONST CHAR16 *Prefix, IN UINTN Depth)
       break;
 
     case SfbRowPowerOff:
-      SfbShowActionScreen (L"Powering off...");
+      SfbShowActionScreen (L"正在关机");
       ShutdownDevice ();
       break;
 
     case SfbRowRestart:
-      SfbShowActionScreen (L"Restarting...");
+      SfbShowActionScreen (L"正在重启");
       RebootDevice (NORMAL_MODE);
       break;
 
@@ -545,7 +524,7 @@ SfbRunMenuLevel (IN CONST CHAR16 *Prefix, IN UINTN Depth)
     default:
       Status = SfbLaunchEntry (&List->Entry[Rows[Cursor].Entry], TRUE, NULL);
       if (EFI_ERROR (Status)) {
-        SfbReportStatus (L"Boot failed", Status);
+        SfbReportStatus (L"启动失败", Status);
       }
       Rebuild = TRUE;
       break;
@@ -567,5 +546,5 @@ SfbRunBootMenu (VOID)
 {
   /* The menu always starts from a fresh scan, stored before it is shown. */
   SfbRefreshEntries ();
-  return SfbRunMenuLevel (L"", 0);
+  return SfbRunMenuLevel (L"", 0, NULL);
 }

@@ -1,26 +1,20 @@
 #!/system/bin/sh
-ui_print "============================================="
-ui_print "  Please select language / 请选择语言"
-ui_print "  Vol+ = Chinese  |  Vol- = English"
-ui_print "============================================="
 
-LANG="zh"
-while true; do
-  keyevent=$(timeout 0.5 getevent -l 2>/dev/null)
-  if echo "$keyevent" | grep -q "KEY_VOLUMEUP"; then
+system_locale=$(getprop persist.sys.locale 2>/dev/null)
+[ -n "$system_locale" ] || system_locale=$(getprop ro.product.locale 2>/dev/null)
+case "$system_locale" in
+  zh*|ZH*)
     LANG="zh"
-    ui_print "[已选择中文 / Chinese selected]"
-    break
-  elif echo "$keyevent" | grep -q "KEY_VOLUMEDOWN"; then
+    ui_print "[自动识别：中文]"
+    ;;
+  *)
     LANG="en"
-    ui_print "[English selected / 已选择英文]"
-    break
-  fi
-done
+    ui_print "[Auto-detected: English]"
+    ;;
+esac
 
 echo "$LANG" > "$MODPATH/lang.txt"
 ksud module config set user_lang "$LANG" 2>/dev/null
-sleep 1
 
 cat > "$MODPATH/module.prop" <<EOF
 id=fake_bl_efisp

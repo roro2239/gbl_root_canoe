@@ -279,8 +279,8 @@ SfbDriverActionMenu (IN EFI_HANDLE   Volume,
                      IN CONST CHAR16 *FullPath)
 {
   STATIC CONST CHAR16  *Actions[] = {
-    L"Load",
-    L"Back"
+    L"加载",
+    L"返回"
   };
 
   UINTN  Cursor = 0;
@@ -290,15 +290,18 @@ SfbDriverActionMenu (IN EFI_HANDLE   Volume,
     SFB_KEY     Key;
     EFI_STATUS  Status;
 
-    SfbBeginScreen (L"EFI Driver", FullPath);
+    SfbBeginScreen (L"EFI 驱动", FullPath);
 
     for (Index = 0; Index < ARRAY_SIZE (Actions); Index++) {
       SfbDrawRow ((BOOLEAN)(Index == Cursor), L" ", Actions[Index]);
     }
 
-    SfbEndScreen (L"Vol Up/Down: move   Power: select");
+    SfbEndScreen (L"音量键移动，电源键确认");
 
     Key = SfbWaitForKey (0);
+    if (Key == SfbKeyDisplayError) {
+      return FALSE;
+    }
     if (Key == SfbKeyUp || Key == SfbKeyDown) {
       SfbMoveCursor (&Cursor, ARRAY_SIZE (Actions), Key);
       continue;
@@ -310,8 +313,8 @@ SfbDriverActionMenu (IN EFI_HANDLE   Volume,
       if (!EFI_ERROR (Status)) {
         SfbConnectAll ();
       }
-      SfbReportStatus (EFI_ERROR (Status) ? L"Driver load failed"
-                                          : L"Driver loaded", Status);
+      SfbReportStatus (EFI_ERROR (Status) ? L"驱动加载失败"
+                                          : L"驱动已加载", Status);
       continue;
     }
 
@@ -331,9 +334,9 @@ SfbEfiActionMenu (IN EFI_HANDLE   Volume,
                   IN CONST CHAR16 *Name)
 {
   STATIC CONST CHAR16  *Actions[] = {
-    L"Boot",
-    L"Add to BootMenu",
-    L"Back"
+    L"启动",
+    L"添加到启动菜单",
+    L"返回"
   };
 
   EFI_STATUS         Status;
@@ -353,7 +356,7 @@ SfbEfiActionMenu (IN EFI_HANDLE   Volume,
 
   Status = SfbMakeFileEntry (Volume, FullPath, Name, &Entry);
   if (EFI_ERROR (Status)) {
-    SfbReportStatus (L"Cannot address that file", Status);
+    SfbReportStatus (L"无法定位此文件", Status);
     return FALSE;
   }
 
@@ -361,15 +364,21 @@ SfbEfiActionMenu (IN EFI_HANDLE   Volume,
     UINTN    Index;
     SFB_KEY  Key;
 
-    SfbBeginScreen (L"EFI Application", FullPath);
+    SfbBeginScreen (L"EFI 应用", FullPath);
 
     for (Index = 0; Index < ARRAY_SIZE (Actions); Index++) {
       SfbDrawRow ((BOOLEAN)(Index == Cursor), L" ", Actions[Index]);
     }
 
-    SfbEndScreen (L"Vol Up/Down: move   Power: select");
+    SfbEndScreen (L"音量键移动，电源键确认");
 
     Key = SfbWaitForKey (0);
+    if (Key == SfbKeyDisplayError) {
+      if (Entry.DevicePath != NULL) {
+        FreePool (Entry.DevicePath);
+      }
+      return FALSE;
+    }
     if (Key == SfbKeyUp || Key == SfbKeyDown) {
       SfbMoveCursor (&Cursor, ARRAY_SIZE (Actions), Key);
       continue;
@@ -379,7 +388,7 @@ SfbEfiActionMenu (IN EFI_HANDLE   Volume,
       /* Menu-driven launch, so clear the screen for the "Booting" banner. */
       Status = SfbLaunchEntry (&Entry, TRUE, NULL);
       if (EFI_ERROR (Status)) {
-        SfbReportStatus (L"Boot failed", Status);
+        SfbReportStatus (L"启动失败", Status);
       }
       continue;
     }
@@ -389,12 +398,12 @@ SfbEfiActionMenu (IN EFI_HANDLE   Volume,
 
       /* Appended at the end of the boot order and stored straight away. */
       if (List == NULL || !SfbEntryListAppend (List, &Entry)) {
-        SfbReportStatus (L"Already listed or list full", EFI_ALREADY_STARTED);
+        SfbReportStatus (L"启动项已存在或列表已满", EFI_ALREADY_STARTED);
         return FALSE;
       }
       Status = SfbWriteStoredEntries (List);
-      SfbReportStatus (EFI_ERROR (Status) ? L"Added, but could not be stored"
-                                          : L"Added to boot menu",
+      SfbReportStatus (EFI_ERROR (Status) ? L"已添加，但无法保存"
+                                          : L"已添加到启动菜单",
                        Status);
       return TRUE;
     }
@@ -426,7 +435,7 @@ SfbBrowseVolume (IN EFI_HANDLE   Volume,
 
   List = AllocateZeroPool (SFB_MAX_DIR_ENTRIES * sizeof (*List));
   if (List == NULL) {
-    SfbReportStatus (L"Out of memory", EFI_OUT_OF_RESOURCES);
+    SfbReportStatus (L"内存不足", EFI_OUT_OF_RESOURCES);
     return FALSE;
   }
 
@@ -441,6 +450,7 @@ SfbBrowseVolume (IN EFI_HANDLE   Volume,
     SFB_KEY              Key;
     CONST SFB_DIR_ENTRY  *Selected;
     CHAR16               FullPath[SFB_PATH_CHARS];
+    CHAR16               TruncatedText[64];
 
     if (Reload) {
       EFI_FILE_PROTOCOL  *Root = NULL;
@@ -458,7 +468,7 @@ SfbBrowseVolume (IN EFI_HANDLE   Volume,
       }
 
       if (EFI_ERROR (Status)) {
-        SfbReportStatus (L"Cannot read directory", Status);
+        SfbReportStatus (L"无法读取目录", Status);
         if (StrCmp (Path, BrowseRoot) == 0) {
           /* The browse root itself is unusable; give up on this volume. */
           break;
@@ -473,8 +483,8 @@ SfbBrowseVolume (IN EFI_HANDLE   Volume,
 
     SfbBeginScreen (VolumeLabel, Path);
 
-    Start = SfbWindowStart (Cursor, Count, SFB_VISIBLE_ROWS);
-    Last = Start + SFB_VISIBLE_ROWS;
+    Start = SfbWindowStart (Cursor, Count, AtUiVisibleRows ());
+    Last = Start + AtUiVisibleRows ();
     if (Last > Count) {
       Last = Count;
     }
@@ -483,27 +493,31 @@ SfbBrowseVolume (IN EFI_HANDLE   Volume,
       CONST CHAR16  *Marker;
 
       if (List[Index].IsDir) {
-        Marker = L"[D]";
+        Marker = L"[目录]";
       } else if (SfbIsEfiFile (List[Index].Name)) {
-        Marker = L"[E]";
+        Marker = L"[EFI]";
       } else {
-        Marker = L"   ";
+        Marker = L" ";
       }
 
       SfbDrawRow ((BOOLEAN)(Index == Cursor), Marker, List[Index].Name);
     }
 
     if (Last < Count) {
-      Print (L"    ... %u more\r\n", (UINT32)(Count - Last));
+      SfbDrawMore (Count - Last);
     }
     if (Truncated) {
-      Print (L"    (directory has more than %u entries; rest not shown)\r\n",
-             (UINT32)SFB_MAX_DIR_ENTRIES);
+      UnicodeSPrint (TruncatedText, sizeof (TruncatedText),
+                     L"目录超过 %u 项，其余未显示", (UINT32)SFB_MAX_DIR_ENTRIES);
+      AtUiDrawNote (TruncatedText);
     }
 
-    SfbEndScreen (L"Vol Up/Down: move   Power: open");
+    SfbEndScreen (L"音量键移动，电源键确认");
 
     Key = SfbWaitForKey (0);
+    if (Key == SfbKeyDisplayError) {
+      break;
+    }
     if (Key == SfbKeyUp || Key == SfbKeyDown) {
       SfbMoveCursor (&Cursor, Count, Key);
       continue;
@@ -532,7 +546,7 @@ SfbBrowseVolume (IN EFI_HANDLE   Volume,
     }
 
     if (!SfbIsEfiFile (Selected->Name)) {
-      SfbReportStatus (L"Not an EFI application", EFI_UNSUPPORTED);
+      SfbReportStatus (L"不是 EFI 应用", EFI_UNSUPPORTED);
       continue;
     }
 
@@ -570,7 +584,7 @@ SfbRunFileBrowser (VOID)
   UINTN           Cursor = 0;
   UINTN           Index;
 
-  SfbShowEnteringScreen (L"File Browser");
+  SfbShowEnteringScreen (L"文件浏览器");
 
   /* Media may have been inserted since the loader started. */
   SfbStartFatStack ();
@@ -583,7 +597,7 @@ SfbRunFileBrowser (VOID)
    */
   Status = SfbLocateVolumes (&Volumes, &VolumeCount);
   if (EFI_ERROR (Status) || Volumes == NULL || VolumeCount == 0) {
-    SfbReportStatus (L"No file system volumes found",
+    SfbReportStatus (L"未找到文件系统卷",
                      EFI_ERROR (Status) ? Status : EFI_NOT_FOUND);
     if (Volumes != NULL) {
       FreePool (Volumes);
@@ -593,7 +607,7 @@ SfbRunFileBrowser (VOID)
 
   Rows = AllocateZeroPool (VolumeCount * sizeof (*Rows));
   if (Rows == NULL) {
-    SfbReportStatus (L"Out of memory", EFI_OUT_OF_RESOURCES);
+    SfbReportStatus (L"内存不足", EFI_OUT_OF_RESOURCES);
     FreePool (Volumes);
     return;
   }
@@ -621,10 +635,10 @@ SfbRunFileBrowser (VOID)
 
     if (Label[0] == L'\0') {
       UnicodeSPrint (Rows[Index].Label, sizeof (Rows[Index].Label),
-                     L"Volume %u", (UINT32)Index);
+                     L"存储卷 %u", (UINT32)Index);
     } else {
       UnicodeSPrint (Rows[Index].Label, sizeof (Rows[Index].Label),
-                     L"Volume %u: %s", (UINT32)Index, Label);
+                     L"存储卷 %u：%s", (UINT32)Index, Label);
     }
   }
 
@@ -636,29 +650,32 @@ SfbRunFileBrowser (VOID)
     UINTN    Last;
     SFB_KEY  Key;
 
-    SfbBeginScreen (L"EFI Program Selector", L"Choose a volume to browse.");
+    SfbBeginScreen (L"选择 EFI 程序", L"选择要浏览的存储卷");
 
-    Start = SfbWindowStart (Cursor, RowCount, SFB_VISIBLE_ROWS);
-    Last = Start + SFB_VISIBLE_ROWS;
+    Start = SfbWindowStart (Cursor, RowCount, AtUiVisibleRows ());
+    Last = Start + AtUiVisibleRows ();
     if (Last > RowCount) {
       Last = RowCount;
     }
 
     for (Index = Start; Index < Last; Index++) {
       if (Index == VolumeCount) {
-        SfbDrawRow ((BOOLEAN)(Index == Cursor), L" ", L"Back");
+        SfbDrawRow ((BOOLEAN)(Index == Cursor), L" ", L"返回");
       } else {
-        SfbDrawRow ((BOOLEAN)(Index == Cursor), L"[V]", Rows[Index].Label);
+        SfbDrawRow ((BOOLEAN)(Index == Cursor), L"[卷]", Rows[Index].Label);
       }
     }
 
     if (Last < RowCount) {
-      Print (L"    ... %u more\r\n", (UINT32)(RowCount - Last));
+      SfbDrawMore (RowCount - Last);
     }
 
-    SfbEndScreen (L"Vol Up/Down: move   Power: select");
+    SfbEndScreen (L"音量键移动，电源键确认");
 
     Key = SfbWaitForKey (0);
+    if (Key == SfbKeyDisplayError) {
+      break;
+    }
     if (Key == SfbKeyUp || Key == SfbKeyDown) {
       SfbMoveCursor (&Cursor, RowCount, Key);
       continue;

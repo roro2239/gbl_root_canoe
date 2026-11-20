@@ -13,6 +13,7 @@
 #define __SUPER_FB_MENU_H__
 
 #include <Uefi.h>
+#include <AndroidToolsUi.h>
 #include <Protocol/BlockIo.h>
 #include <Protocol/DevicePath.h>
 #include <Protocol/SimpleFileSystem.h>
@@ -42,7 +43,8 @@ typedef enum {
   SfbKeyTimeout = 0,
   SfbKeyUp,
   SfbKeyDown,
-  SfbKeySelect
+  SfbKeySelect,
+  SfbKeyDisplayError
 } SFB_KEY;
 
 /* ---- SuperFbFat.c: embedded FAT/EXT4 stack and volume helpers ----------- */
@@ -273,11 +275,21 @@ SfbWaitForKey (IN UINT32 TimeoutMs);
 
 /* ---- shared console helpers (SuperFbMenu.c) ----------------------------- */
 
-/* Rows of list content a screen shows before it starts scrolling. */
-#define SFB_VISIBLE_ROWS  12
+extern CONST CHAR16 gSfbRootTitle[];
+
+CONST CHAR16 *
+SfbEntryMenuName (IN CONST SFB_ENTRY_SPEC *Spec);
+
+/* 立即绘制或复制结果。无卷标的默认启动项复用一个格式化缓冲区。 */
+CONST CHAR16 *
+SfbEntryDisplayName (IN CONST SFB_ENTRY_SPEC *Spec, IN CONST CHAR16 *Fallback OPTIONAL);
 
 VOID
-SfbBeginScreen (IN CONST CHAR16 *Title, IN CONST CHAR16 *Subtitle OPTIONAL);
+SfbDrawMore (IN UINTN Remaining);
+
+/* A NULL title displays the name of the root menu. */
+VOID
+SfbBeginScreen (IN CONST CHAR16 *Title OPTIONAL, IN CONST CHAR16 *Subtitle OPTIONAL);
 
 VOID
 SfbEndScreen (IN CONST CHAR16 *Footer);

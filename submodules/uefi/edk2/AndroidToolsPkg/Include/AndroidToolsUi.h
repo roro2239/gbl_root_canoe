@@ -28,7 +28,7 @@ typedef enum {
   so a power press held through LoadImage/StartImage does not auto-confirm the
   first entry.
 **/
-VOID
+EFI_STATUS
 AtUiEnterMenu (
   IN CONST CHAR16 *Title
   );
@@ -62,6 +62,19 @@ AtUiDrawRow (
   IN CONST CHAR16 *Marker,
   IN CONST CHAR16 *Text
   );
+
+UINTN
+AtUiVisibleRows (VOID);
+
+VOID
+AtUiDrawNote (IN CONST CHAR16 *Text);
+
+EFI_STATUS
+AtUiScreenStatus (VOID);
+
+/* 自动启动时只覆盖一行，保留已有的开机画面。 */
+VOID
+AtUiShowBanner (IN CONST CHAR16 *Text, IN BOOLEAN ClearScreen);
 
 /** First row of the visible window, chosen to keep Cursor inside it. **/
 UINTN

@@ -121,7 +121,7 @@ AtShowArbValues (
 
   Status = AtDevInfoRead (&Info);
   if (EFI_ERROR (Status)) {
-    AtUiReportStatus (L"Read DeviceInfo", Status);
+    AtUiReportStatus (L"读取 DeviceInfo", Status);
     return;
   }
 
@@ -129,14 +129,14 @@ AtShowArbValues (
    * would be uninitialized or corrupt, so the "existing" fields are garbage
    * and writing them back could clobber unrelated areas (unlock state, keys). */
   if (CompareMem (Info.magic, DEVICE_MAGIC, DEVICE_MAGIC_SIZE) != 0) {
-    AtUiShowMessage (L"DeviceInfo not initialized");
+    AtUiShowMessage (L"DeviceInfo 尚未初始化");
     AtUiWaitForKey (0);
     return;
   }
 
   Lines = AllocateZeroPool (MAX_VB_PARTITIONS * sizeof (CHAR16 *));
   if (Lines == NULL) {
-    AtUiReportStatus (L"Alloc", EFI_OUT_OF_RESOURCES);
+    AtUiReportStatus (L"分配内存", EFI_OUT_OF_RESOURCES);
     goto Out;
   }
 
@@ -149,24 +149,24 @@ AtShowArbValues (
     }
     Lines[Used] = AllocatePool (40 * sizeof (CHAR16));
     if (Lines[Used] == NULL) {
-      AtUiReportStatus (L"Alloc", EFI_OUT_OF_RESOURCES);
+      AtUiReportStatus (L"分配内存", EFI_OUT_OF_RESOURCES);
       goto Out;
     }
     UnicodeSPrint (Lines[Used], 40 * sizeof (CHAR16),
-                   L"Slot %2u: 0x%016lx", (UINT32)Index, Val);
+                   L"索引 %2u：0x%016lx", (UINT32)Index, Val);
     Used++;
   }
 
   if (Used == 0) {
-    AtUiShowMessage (L"All rollback slots are 0");
+    AtUiShowMessage (L"所有 ARB 索引均为零");
     AtUiWaitForKey (0);
     goto Out;
   }
 
   /* Selection is ignored - power just returns to the main menu. */
   Index = 0;
-  AtUiRunMenu (L"ARB Rollback Index (non-zero)", (CONST CHAR16 **)Lines, Used,
-               &Index, L"Vol+/- scroll, power to return");
+  AtUiRunMenu (L"ARB 索引（非零）", (CONST CHAR16 **)Lines, Used,
+               &Index, L"音量键滚动，电源键返回");
 
 Out:
   for (Index = 0; Index < MAX_VB_PARTITIONS; Index++) {
@@ -197,6 +197,7 @@ AtConfirmReset5x (
 {
   UINTN  Step;
   AT_KEY Key;
+  CHAR16 Progress[24];
 
   for (Step = 1; Step <= 5; Step++) {
     /* Enforce >=1s since the previous confirmation and drop any key held over
@@ -204,14 +205,15 @@ AtConfirmReset5x (
     gBS->Stall (1000000);  /* 1 second */
     gST->ConIn->Reset (gST->ConIn, FALSE);
 
-    AtUiBeginScreen (L"Reset ARB Index", NULL);
-    Print (L"WARNING: this writes to the TEE and may lose keys.\r\n");
-    Print (L"\r\n   Confirm %u/5\r\n", (UINT32)Step);
-    Print (L"\r\nPower = confirm   Vol+/- = cancel\r\n");
+    AtUiBeginScreen (L"重置 ARB 索引", NULL);
+    AtUiDrawNote (L"警告：将写入 TEE，可能丢失密钥。");
+    UnicodeSPrint (Progress, sizeof (Progress), L"确认 %u/5", (UINT32)Step);
+    AtUiDrawNote (Progress);
+    AtUiEndScreen (L"电源键确认，音量键取消");
 
     Key = AtUiWaitForKey (0);
     if (Key != AtKeySelect) {
-      AtUiShowMessage (L"Reset cancelled");
+      AtUiShowMessage (L"已取消重置");
       gBS->Stall (1000000);
       return FALSE;
     }
@@ -238,11 +240,11 @@ AtResetArbValues (
     return;
   }
 
-  AtUiShowMessage (L"Resetting ARB index...");
+  AtUiShowMessage (L"正在重置 ARB 索引...");
 
   Status = AtDevInfoRead (&Info);
   if (EFI_ERROR (Status)) {
-    AtUiReportStatus (L"Read DeviceInfo", Status);
+    AtUiReportStatus (L"读取 DeviceInfo", Status);
     return;
   }
 
@@ -251,7 +253,7 @@ AtResetArbValues (
    * uninitialized/corrupt; zeroing rollback_index and persisting the rest would
    * clobber unrelated areas, so abort instead. */
   if (CompareMem (Info.magic, DEVICE_MAGIC, DEVICE_MAGIC_SIZE) != 0) {
-    AtUiReportStatus (L"DeviceInfo magic", EFI_VOLUME_CORRUPTED);
+    AtUiReportStatus (L"DeviceInfo 标识", EFI_VOLUME_CORRUPTED);
     return;
   }
 
@@ -259,11 +261,11 @@ AtResetArbValues (
 
   Status = AtDevInfoWrite (&Info);
   if (EFI_ERROR (Status)) {
-    AtUiReportStatus (L"Write DeviceInfo", Status);
+    AtUiReportStatus (L"写入 DeviceInfo", Status);
     return;
   }
 
-  AtUiShowMessage (L"ARB index reset complete");
+  AtUiShowMessage (L"ARB 索引重置完成");
   AtUiWaitForKey (0);
 }
 
@@ -277,9 +279,9 @@ ArbToolsEntry (
   )
 {
   STATIC CONST CHAR16 *Items[] = {
-    L"Get ARB Value",
-    L"Reset ARB Value",
-    L"Back",
+    L"读取 ARB 值",
+    L"重置 ARB 值",
+    L"返回",
   };
   UINTN      Sel;
   EFI_STATUS Status;
@@ -289,13 +291,16 @@ ArbToolsEntry (
    * held when we start; drain it (after a release delay) so it cannot confirm
    * the first entry the instant the menu appears.
    */
-  AtUiEnterMenu (L"ARB Tools");
+  Status = AtUiEnterMenu (L"ARB 工具");
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
 
   while (TRUE) {
-    Status = AtUiRunMenu (L"ARB Tools", Items, ARRAY_SIZE (Items), &Sel,
-                          L"Vol+/- move, power select");
+    Status = AtUiRunMenu (L"ARB 工具", Items, ARRAY_SIZE (Items), &Sel,
+                          L"音量键移动，电源键确认");
     if (EFI_ERROR (Status)) {
-      continue;
+      return Status;
     }
 
     switch (Sel) {

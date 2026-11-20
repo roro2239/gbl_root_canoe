@@ -76,6 +76,7 @@
 	SuperFbEntryList.c
 	SuperFbEntries.c
 	SuperFbMenu.c
+	SuperFbTitle.c
 	SuperFbBrowser.c
 	SuperFbAdvanced.h
 	SuperFbAdvanced.c
@@ -85,6 +86,7 @@
 	SuperFbUsbMsd.c
 
 [Packages]
+	AndroidToolsPkg/AndroidToolsPkg.dec
 	ArmPkg/ArmPkg.dec
 	MdePkg/MdePkg.dec
 	EmbeddedPkg/EmbeddedPkg.dec
@@ -95,6 +97,7 @@
 	Ext4Pkg/Ext4Pkg.dec
 
 [LibraryClasses]
+	AndroidToolsUi
 	DxeServicesTableLib
 	UefiLib
 	UefiApplicationEntryPoint
@@ -156,6 +159,7 @@
 
 [Protocols]
 	gSfbSecureBootProtocolGuid
+	gEfiKernelProtocolGuid
 	gEfiSimpleTextInputExProtocolGuid
 	gEfiBlockIoProtocolGuid
 	gEfiLoadedImageProtocolGuid

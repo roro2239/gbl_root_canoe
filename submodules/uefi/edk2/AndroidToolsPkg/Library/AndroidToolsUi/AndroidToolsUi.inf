@@ -12,9 +12,12 @@
   MODULE_TYPE                    = BASE
   VERSION_STRING                 = 0.1
   LIBRARY_CLASS                  = AndroidToolsUi
+  DESTRUCTOR                     = AtUiReleaseScreen
 
 [Sources]
   AndroidToolsUi.c
+  MenuScreen.c
+  MenuFont.h
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -31,3 +34,4 @@
 
 [Protocols]
   gEfiSimpleTextInProtocolGuid
+  gEfiGraphicsOutputProtocolGuid

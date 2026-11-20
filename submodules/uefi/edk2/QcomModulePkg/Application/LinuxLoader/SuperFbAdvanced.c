@@ -89,8 +89,8 @@ SfbAdvChoose (IN CONST CHAR16 *Title,
   while (TRUE) {
     SfbBeginScreen (Title, Subtitle);
 
-    Start = SfbWindowStart (Cursor, Total, SFB_VISIBLE_ROWS);
-    Last = Start + SFB_VISIBLE_ROWS;
+    Start = SfbWindowStart (Cursor, Total, AtUiVisibleRows ());
+    Last = Start + AtUiVisibleRows ();
     if (Last > Total) {
       Last = Total;
     }
@@ -99,15 +99,18 @@ SfbAdvChoose (IN CONST CHAR16 *Title,
       if (Index < Count) {
         SfbDrawRow ((BOOLEAN)(Index == Cursor), L" ", Rows[Index]);
       } else {
-        SfbDrawRow ((BOOLEAN)(Index == Cursor), L" ", L"Back");
+        SfbDrawRow ((BOOLEAN)(Index == Cursor), L" ", L"返回");
       }
     }
     if (Last < Total) {
-      Print (L"    ... %u more\r\n", (UINT32)(Total - Last));
+      SfbDrawMore (Total - Last);
     }
-    SfbEndScreen (L"Vol Up/Down: move   Power: select");
+    SfbEndScreen (L"音量键移动，电源键确认");
 
     Key = SfbWaitForKey (0);
+    if (Key == SfbKeyDisplayError) {
+      return -1;
+    }
     if (Key == SfbKeyUp || Key == SfbKeyDown) {
       SfbMoveCursor (&Cursor, Total, Key);
       continue;
@@ -133,14 +136,14 @@ SfbAdvChooseMountMode (IN CONST CHAR16 *Target,
                        OUT BOOLEAN     *ReadOnly)
 {
   STATIC CONST CHAR16 Rows[2][SFB_ADV_ROW_CHARS] = {
-    L"Read only",
-    L"Read Write"
+    L"只读",
+    L"读写"
   };
   CHAR16 Subtitle[96];
   INTN   Chosen;
 
-  UnicodeSPrint (Subtitle, sizeof (Subtitle), L"Mount %s how?", Target);
-  Chosen = SfbAdvChoose (L"USB Mass Storage", Subtitle, Rows, 2, 0);
+  UnicodeSPrint (Subtitle, sizeof (Subtitle), L"选择 %s 的挂载方式", Target);
+  Chosen = SfbAdvChoose (L"USB 大容量存储", Subtitle, Rows, 2, 0);
   if (Chosen < 0) {
     return FALSE;
   }
@@ -297,20 +300,20 @@ SfbAdvExportPartition (IN CONST SFB_ADV_PARTITION *Part)
                                ReadOnly,
                                &Disk);
   if (EFI_ERROR (Status)) {
-    SfbReportStatus (L"Could not wrap partition", Status);
+    SfbReportStatus (L"无法创建分区映射", Status);
     return;
   }
 
   UnicodeSPrint (Detail, sizeof (Detail),
-                 L"Partition: %s (%a)", Target,
-                 ReadOnly ? "read-only" : "read-write");
-  Status = SfbUsbMsdExportBlkIo (&Disk->BlockIo, L"USB Mass Storage",
+                 L"分区：%s（%s）", Target,
+                 ReadOnly ? L"只读" : L"读写");
+  Status = SfbUsbMsdExportBlkIo (&Disk->BlockIo, L"USB 大容量存储",
                                  Detail, Bytes);
   SfbSynthDiskDestroy (Disk);
 
   if (EFI_ERROR (Status) && Status != EFI_ABORTED &&
       Status != EFI_MEDIA_CHANGED) {
-    SfbReportStatus (L"Could not start mass storage", Status);
+    SfbReportStatus (L"无法启动 USB 大容量存储", Status);
   }
 }
 
@@ -332,20 +335,20 @@ SfbAdvExportLun (IN CONST SFB_ADV_LUN *Lun)
 
   Status = SfbPassDiskCreate (Lun->BlkIo, ReadOnly, &Disk);
   if (EFI_ERROR (Status)) {
-    SfbReportStatus (L"Could not wrap LUN", Status);
+    SfbReportStatus (L"无法创建 LUN 映射", Status);
     return;
   }
 
   UnicodeSPrint (Detail, sizeof (Detail),
-                 L"Whole LUN %u (%a)", Lun->Lun,
-                 ReadOnly ? "read-only" : "read-write");
-  Status = SfbUsbMsdExportBlkIo (&Disk->BlockIo, L"USB Mass Storage",
+                 L"整个 LUN %u（%s）", Lun->Lun,
+                 ReadOnly ? L"只读" : L"读写");
+  Status = SfbUsbMsdExportBlkIo (&Disk->BlockIo, L"USB 大容量存储",
                                  Detail, Lun->Bytes);
   SfbSynthDiskDestroy (Disk);
 
   if (EFI_ERROR (Status) && Status != EFI_ABORTED &&
       Status != EFI_MEDIA_CHANGED) {
-    SfbReportStatus (L"Could not start mass storage", Status);
+    SfbReportStatus (L"无法启动 USB 大容量存储", Status);
   }
 }
 
@@ -414,12 +417,12 @@ SfbAdvExportPartitionFlow (VOID)
   SFB_ADV_PARTITION *Parts;
   UINTN       PartCount;
 
-  SfbShowEnteringScreen (L"Export a partition");
+  SfbShowEnteringScreen (L"导出分区");
 
   while (TRUE) {
     LunCount = SfbAdvCollectLuns (Luns);
     if (LunCount == 0) {
-      SfbReportStatus (L"No storage LUNs found", EFI_NOT_FOUND);
+      SfbReportStatus (L"未找到存储 LUN", EFI_NOT_FOUND);
       return;
     }
 
@@ -433,8 +436,8 @@ SfbAdvExportPartitionFlow (VOID)
                      Luns[Index].Bytes / (1024 * 1024));
     }
 
-    Chosen = SfbAdvChoose (L"Export a partition",
-                           L"Pick the LUN holding the partition.",
+    Chosen = SfbAdvChoose (L"导出分区",
+                           L"选择分区所在的 LUN",
                            Rows, LunCount, 0);
     FreePool (Rows);
     if (Chosen < 0) {
@@ -444,11 +447,11 @@ SfbAdvExportPartitionFlow (VOID)
 
     /* Partition picker on the chosen LUN. */
     while (TRUE) {
-      SfbShowEnteringScreen (L"Partition Picker");
+      SfbShowEnteringScreen (L"选择分区");
 
       PartCount = SfbAdvCollectPartitions (Lun, &Parts);
       if (PartCount == 0) {
-        SfbReportStatus (L"No partitions on this LUN", EFI_NOT_FOUND);
+        SfbReportStatus (L"此 LUN 没有分区", EFI_NOT_FOUND);
         break;
       }
 
@@ -463,8 +466,8 @@ SfbAdvExportPartitionFlow (VOID)
                        Parts[Index].Bytes / (1024 * 1024));
       }
 
-      Chosen = SfbAdvChoose (L"Export a partition",
-                             L"Pick the partition to export.",
+      Chosen = SfbAdvChoose (L"导出分区",
+                             L"选择要导出的分区",
                              Rows, PartCount, 0);
       FreePool (Rows);
       if (Chosen < 0) {
@@ -490,12 +493,12 @@ SfbAdvExportLunFlow (VOID)
   UINTN       Index;
   INTN        Chosen;
 
-  SfbShowEnteringScreen (L"Export a LUN");
+  SfbShowEnteringScreen (L"导出 LUN");
 
   while (TRUE) {
     LunCount = SfbAdvCollectLuns (Luns);
     if (LunCount == 0) {
-      SfbReportStatus (L"No storage LUNs found", EFI_NOT_FOUND);
+      SfbReportStatus (L"未找到存储 LUN", EFI_NOT_FOUND);
       return;
     }
 
@@ -509,8 +512,8 @@ SfbAdvExportLunFlow (VOID)
                      Luns[Index].Bytes / (1024 * 1024));
     }
 
-    Chosen = SfbAdvChoose (L"Export a LUN",
-                           L"Pick the LUN to export whole.",
+    Chosen = SfbAdvChoose (L"导出 LUN",
+                           L"选择要完整导出的 LUN",
                            Rows, LunCount, 0);
     FreePool (Rows);
     if (Chosen < 0) {
@@ -552,9 +555,9 @@ SfbAdvExportConfigSink (IN EFI_BLOCK_IO_PROTOCOL *Container, IN VOID *Context)
     return Status;
   }
 
-  UnicodeSPrint (Detail, sizeof (Detail), L"Config store (%a)",
-                 Export->ReadOnly ? "read-only" : "read-write");
-  Status = SfbUsbMsdExportBlkIo (&Disk->BlockIo, L"USB Mass Storage", Detail,
+  UnicodeSPrint (Detail, sizeof (Detail), L"配置存储（%s）",
+                 Export->ReadOnly ? L"只读" : L"读写");
+  Status = SfbUsbMsdExportBlkIo (&Disk->BlockIo, L"USB 大容量存储", Detail,
                                  Bytes);
   SfbSynthDiskDestroy (Disk);
   return Status;
@@ -568,17 +571,17 @@ SfbAdvExportConfigFlow (VOID)
   EFI_STATUS             Status;
   SFB_ENTRY_LIST         *List;
 
-  SfbShowEnteringScreen (L"Export Config Store");
+  SfbShowEnteringScreen (L"导出配置存储");
 
   Export.ReadOnly = TRUE;
-  if (!SfbAdvChooseMountMode (L"the config store", &Export.ReadOnly)) {
+  if (!SfbAdvChooseMountMode (L"配置存储", &Export.ReadOnly)) {
     return;
   }
 
   Status = SfbConfigStoreExportUsb (SfbAdvExportConfigSink, &Export);
   if (EFI_ERROR (Status) && Status != EFI_ABORTED &&
       Status != EFI_MEDIA_CHANGED) {
-    SfbReportStatus (L"Could not export the config store", Status);
+    SfbReportStatus (L"无法导出配置存储", Status);
   }
 
   /* The host may have edited CONFIG\ENTRIES.CFG: it is the list now. */
@@ -606,7 +609,9 @@ SfbAdvEntryRows (IN CONST SFB_ENTRY_LIST *List)
     return NULL;
   }
   for (Index = 0; Index < List->Count; Index++) {
-    StrnCpyS (Rows[Index], SFB_ADV_ROW_CHARS, List->Entry[Index].Spec.Name,
+    StrnCpyS (Rows[Index], SFB_ADV_ROW_CHARS,
+              SfbEntryDisplayName (&List->Entry[Index].Spec,
+                                   List->Entry[Index].Spec.Name),
               SFB_ADV_ROW_CHARS - 1);
   }
   return Rows;
@@ -620,7 +625,7 @@ SfbAdvStore (IN CONST SFB_ENTRY_LIST *List)
 
   Status = SfbWriteStoredEntries (List);
   if (EFI_ERROR (Status)) {
-    SfbReportStatus (L"Could not store the boot entries", Status);
+    SfbReportStatus (L"无法保存启动项", Status);
   }
 }
 
@@ -642,7 +647,7 @@ SfbRunPriorityMenu (VOID)
   BOOLEAN         Moved;
   SFB_KEY         Key;
 
-  SfbShowEnteringScreen (L"Boot Entries Priority");
+  SfbShowEnteringScreen (L"启动顺序");
   if (List == NULL) {
     return;
   }
@@ -651,11 +656,11 @@ SfbRunPriorityMenu (VOID)
   while (TRUE) {
     Rows = SfbAdvEntryRows (List);
     if (Rows == NULL) {
-      SfbReportStatus (L"No boot entries", EFI_NOT_FOUND);
+      SfbReportStatus (L"没有启动项", EFI_NOT_FOUND);
       return;
     }
-    Chosen = SfbAdvChoose (L"Boot Entries Priority",
-                           L"Boot order, first is tried first. Pick one to move.",
+    Chosen = SfbAdvChoose (L"启动顺序",
+                           L"按顺序尝试启动，选择要移动的启动项",
                            Rows, List->Count, Pos);
     FreePool (Rows);
     if (Chosen < 0) {
@@ -665,16 +670,23 @@ SfbRunPriorityMenu (VOID)
     Pos = (UINTN)Chosen;
     Moved = FALSE;
     while (TRUE) {
-      SfbBeginScreen (L"Boot Entries Priority", L"Moving the marked entry.");
-      Start = SfbWindowStart (Pos, List->Count, SFB_VISIBLE_ROWS);
-      Last = MIN (Start + SFB_VISIBLE_ROWS, List->Count);
+      SfbBeginScreen (L"启动顺序", L"正在移动标记的启动项");
+      Start = SfbWindowStart (Pos, List->Count, AtUiVisibleRows ());
+      Last = MIN (Start + AtUiVisibleRows (), List->Count);
       for (Index = Start; Index < Last; Index++) {
         SfbDrawRow ((BOOLEAN)(Index == Pos), (Index == Pos) ? L"=" : L" ",
-                    List->Entry[Index].Spec.Name);
+                    SfbEntryDisplayName (&List->Entry[Index].Spec,
+                                         List->Entry[Index].Spec.Name));
       }
-      SfbEndScreen (L"Vol Up/Down: move entry   Power: done");
+      if (Last < List->Count) {
+        SfbDrawMore (List->Count - Last);
+      }
+      SfbEndScreen (L"音量键移动启动项，电源键完成");
 
       Key = SfbWaitForKey (0);
+      if (Key == SfbKeyDisplayError) {
+        break;
+      }
       if (Key == SfbKeyUp && Pos > 0) {
         SfbEntryListMove (List, Pos, Pos - 1);
         Pos--;
@@ -701,15 +713,15 @@ VOID
 SfbRunManagementMenu (VOID)
 {
   STATIC CONST CHAR16  Confirm[2][SFB_ADV_ROW_CHARS] = {
-    L"Delete",
-    L"Keep"
+    L"删除",
+    L"保留"
   };
   SFB_ENTRY_LIST  *List = SfbEntries ();
   CHAR16          (*Rows)[SFB_ADV_ROW_CHARS];
   INTN            Chosen;
   UINTN           Cursor = 0;
 
-  SfbShowEnteringScreen (L"Boot Entries Management");
+  SfbShowEnteringScreen (L"管理启动项");
   if (List == NULL) {
     return;
   }
@@ -717,11 +729,11 @@ SfbRunManagementMenu (VOID)
   while (TRUE) {
     Rows = SfbAdvEntryRows (List);
     if (Rows == NULL) {
-      SfbReportStatus (L"No boot entries", EFI_NOT_FOUND);
+      SfbReportStatus (L"没有启动项", EFI_NOT_FOUND);
       return;
     }
-    Chosen = SfbAdvChoose (L"Boot Entries Management",
-                           L"Pick an entry to delete.", Rows, List->Count,
+    Chosen = SfbAdvChoose (L"管理启动项",
+                           L"选择要删除的启动项", Rows, List->Count,
                            Cursor);
     if (Chosen < 0) {
       FreePool (Rows);
@@ -729,7 +741,7 @@ SfbRunManagementMenu (VOID)
     }
     Cursor = (UINTN)Chosen;
 
-    if (SfbAdvChoose (L"Delete boot entry", Rows[Chosen], Confirm, 2, 1) == 0) {
+    if (SfbAdvChoose (L"删除启动项", Rows[Chosen], Confirm, 2, 1) == 0) {
       SfbEntryListRemove (List, (UINTN)Chosen);
       SfbAdvStore (List);
     }
@@ -950,16 +962,16 @@ SfbAdvCollectVolumes (OUT SFB_ADV_GROUP  *Groups,
       Groups[GroupIdx].Lun = Lun;
       SfbAdvVolumeLabel (All[Index], Label, SFB_DESC_CHARS);
       if (Key == NULL) {
-        StrCpyS (Groups[GroupIdx].Title, SFB_ADV_ROW_CHARS, L"Config Store");
+        StrCpyS (Groups[GroupIdx].Title, SFB_ADV_ROW_CHARS, L"配置存储");
       } else if (Lun >= 0) {
         UnicodeSPrint (Groups[GroupIdx].Title,
                        sizeof (Groups[GroupIdx].Title), L"LUN %d",
                        (INT32)Lun);
       } else if (Label[0] != L'\0') {
         UnicodeSPrint (Groups[GroupIdx].Title,
-                       sizeof (Groups[GroupIdx].Title), L"Disk %s", Label);
+                       sizeof (Groups[GroupIdx].Title), L"磁盘 %s", Label);
       } else {
-        StrCpyS (Groups[GroupIdx].Title, SFB_ADV_ROW_CHARS, L"Disk");
+        StrCpyS (Groups[GroupIdx].Title, SFB_ADV_ROW_CHARS, L"磁盘");
       }
       G++;
     }
@@ -991,14 +1003,14 @@ SfbRunVolumesMenu (VOID)
   EFI_HANDLE     Volume;
   CHAR16         ChosenLabel[SFB_ADV_ROW_CHARS];
 
-  SfbShowEnteringScreen (L"Volumes");
+  SfbShowEnteringScreen (L"存储卷");
 
   while (TRUE) {
     VolCount = SfbAdvCollectVolumes (Groups, &GroupCount, SFB_ADV_GROUPS_MAX,
                                      Volumes, VolGroups,
                                      SFB_ADV_GROUP_VOLS_MAX, &HaveConfig);
     if (VolCount == 0 || GroupCount == 0) {
-      SfbReportStatus (L"No file system volumes found", EFI_NOT_FOUND);
+      SfbReportStatus (L"未找到文件系统卷", EFI_NOT_FOUND);
       return;
     }
 
@@ -1009,7 +1021,7 @@ SfbRunVolumesMenu (VOID)
     for (Index = 0; Index < VolCount; Index++) {
       SfbAdvVolumeLabel (Volumes[Index], Labels[Index], SFB_ADV_ROW_CHARS);
       if (Labels[Index][0] == L'\0') {
-        StrCpyS (Labels[Index], SFB_ADV_ROW_CHARS, L"Volume");
+        StrCpyS (Labels[Index], SFB_ADV_ROW_CHARS, L"存储卷");
       }
     }
 
@@ -1022,7 +1034,7 @@ SfbRunVolumesMenu (VOID)
     for (Index = 0; Index < GroupCount; Index++) {
       StrCpyS (Rows[Index], SFB_ADV_ROW_CHARS, Groups[Index].Title);
     }
-    Chosen = SfbAdvChoose (L"Volumes", L"Pick a storage group.",
+    Chosen = SfbAdvChoose (L"存储卷", L"选择存储组",
                            Rows, GroupCount, 0);
     FreePool (Rows);
     if (Chosen < 0) {
@@ -1039,7 +1051,7 @@ SfbRunVolumesMenu (VOID)
         }
       }
       if (Count == 0) {
-        SfbReportStatus (L"No volumes in this group", EFI_NOT_FOUND);
+        SfbReportStatus (L"此组没有存储卷", EFI_NOT_FOUND);
         break;
       }
 
@@ -1056,7 +1068,7 @@ SfbRunVolumesMenu (VOID)
       }
 
       ChosenVol = SfbAdvChoose (Groups[Chosen].Title,
-                                L"Pick a volume to browse.",
+                                L"选择要浏览的存储卷",
                                 Rows, Count, 0);
       FreePool (Rows);
       if (ChosenVol < 0) {
@@ -1097,17 +1109,17 @@ VOID
 SfbRunMassStorageMenu (VOID)
 {
   STATIC CONST CHAR16 Rows[3][SFB_ADV_ROW_CHARS] = {
-    L"Export a partition >",
-    L"Export a LUN >",
-    L"Export Config Store >"
+    L"导出分区 >",
+    L"导出 LUN >",
+    L"导出配置存储 >"
   };
   INTN Chosen;
 
-  SfbShowEnteringScreen (L"USB Mass Storage");
+  SfbShowEnteringScreen (L"USB 大容量存储");
 
   while (TRUE) {
-    Chosen = SfbAdvChoose (L"USB Mass Storage",
-                           L"Expose device storage to the host over USB.",
+    Chosen = SfbAdvChoose (L"USB 大容量存储",
+                           L"通过 USB 向主机共享存储",
                            Rows, 3, 0);
     if (Chosen < 0) {
       return;
@@ -1126,14 +1138,14 @@ BOOLEAN
 SfbRunAdvancedMenu (VOID)
 {
   STATIC CONST CHAR16 Rows[5][SFB_ADV_ROW_CHARS] = {
-    L"Enter Fastboot",
-    L"USB Mass Storage >",
-    L"Volumes >",
-    L"Boot Entries Priority >",
-    L"Boot Entries Management >"
+    L"进入 Fastboot",
+    L"USB 大容量存储 >",
+    L"存储卷 >",
+    L"启动顺序 >",
+    L"管理启动项 >"
   };
   CONST CHAR16 *LockHint =
-    L"Device locked: only fastboot authorization is available here.";
+    L"设备已锁定：此处仅提供 Fastboot 授权";
   INTN Chosen;
   UINTN RowCount;
 
@@ -1141,10 +1153,10 @@ SfbRunAdvancedMenu (VOID)
    * of the menu returns after a successful challenge response this boot. */
   RowCount = SfbSecurityLocked () ? 1 : ARRAY_SIZE (Rows);
 
-  SfbShowEnteringScreen (L"Advanced");
+  SfbShowEnteringScreen (L"高级");
 
   while (TRUE) {
-    Chosen = SfbAdvChoose (L"Advanced",
+    Chosen = SfbAdvChoose (L"高级",
                            RowCount == 1 ? LockHint : NULL,
                            Rows, RowCount, 0);
     switch (Chosen) {

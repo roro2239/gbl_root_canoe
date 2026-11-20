@@ -19,7 +19,7 @@
 
 [LibraryClasses]
   ## Super-fastboot style console menu (volume up/down + power).
-  AndroidToolsUi|AndroidToolsPkg/Library/AndroidToolsUi/AndroidToolsUi.inf
+  AndroidToolsUi|Include/AndroidToolsUi.h
 
 [Protocols]
   ## Qualcomm Verified Boot protocol (produced by platform DXE at runtime).

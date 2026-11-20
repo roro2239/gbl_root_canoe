@@ -659,7 +659,7 @@ SfbLaunchEntry (IN CONST SFB_BOOT_ENTRY *Entry,
    * done for a menu-driven launch; an unattended boot leaves the screen (e.g.
    * the boot splash) untouched.
    */
-  SfbShowBootingScreen (Entry->Spec.Name, ClearScreen);
+  SfbShowBootingScreen (SfbEntryDisplayName (&Entry->Spec, Entry->Spec.Name), ClearScreen);
 
   SfbLoadSecurityPolicy ();
   Status = gBS->LoadImage (FALSE, gImageHandle, Entry->DevicePath,
